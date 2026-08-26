@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { motion, Variants } from 'framer-motion';
+import { AnimatedNumber, HoverTooltip } from '@/components/ui/MetricCard';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import {
@@ -181,10 +182,12 @@ export default function AnalyticsPage() {
                 <span className="card-title text-cyan-400">Rescue vs Fatality Rate</span>
                 <p style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', marginTop: 4 }}>Pre & Post Valkyra Deployment Trajectory</p>
               </div>
-              <div className="text-right">
-                <div style={{ fontSize: 24, fontWeight: 'bold', fontFamily: 'var(--mono)', color: 'var(--green)' }}>92.0%</div>
+              <HoverTooltip className="text-right" tooltip="Share of field incidents this month resulting in a successful rescue outcome.">
+                <div style={{ fontSize: 24, fontWeight: 'bold', fontFamily: 'var(--mono)', color: 'var(--green)' }}>
+                  <AnimatedNumber value={rescueTrendData[rescueTrendData.length - 1].rescue} decimals={1} />%
+                </div>
                 <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', textTransform: 'uppercase' }}>Current Rescue Rate</div>
-              </div>
+              </HoverTooltip>
             </div>
             
             <div className="h-[280px] w-full mt-4 relative z-10 p-4">
@@ -220,27 +223,27 @@ export default function AnalyticsPage() {
               <h2 style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--cyan)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 24 }}>Intervention Impact</h2>
               
               <div className="space-y-6">
-                <div>
+                <HoverTooltip tooltip="Modeled improvement in survival odds compared to the pre-Valkyra deployment baseline.">
                   <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', marginBottom: 4 }}>RELATIVE SURVIVAL INCREASE</div>
                   <div style={{ fontSize: 28, fontWeight: 'bold', fontFamily: 'var(--mono)', color: 'white', display: 'flex', alignItems: 'center', gap: 12 }}>
-                    +37% 
+                    +<AnimatedNumber value={37} />%
                     <span style={{ fontSize: 10, padding: '4px 8px', background: 'rgba(34, 197, 94, 0.1)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4 }}>Significant</span>
                   </div>
-                </div>
-                
+                </HoverTooltip>
+
                 <div style={{ height: 1, width: '100%', background: 'rgba(255,255,255,0.05)' }} />
 
-                <div>
+                <HoverTooltip tooltip="Average time from incident detection to patient stabilization, compared against the pre-Valkyra baseline.">
                   <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', marginBottom: 4 }}>AVERAGE STABILIZATION TIME</div>
                   <div style={{ fontSize: 24, fontWeight: 'bold', fontFamily: 'var(--mono)', color: 'white' }}>
                     14.2 <span style={{ fontSize: 12, color: 'var(--text3)' }}>mins</span>
                   </div>
                   <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--green)', marginTop: 4 }}>↓ 4.8 mins faster than baseline</div>
-                </div>
+                </HoverTooltip>
               </div>
             </div>
-            
-            <div className="relative z-10 mt-6 p-4 rounded-lg" style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)' }}>
+
+            <HoverTooltip tooltip="Share of interventions performed in line with clinical protocol, measured against a 95% target." className="relative z-10 mt-6 p-4 rounded-lg block" style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Protocol Adherence</div>
               <div style={{ width: '100%', background: 'rgba(255,255,255,0.1)', height: 6, borderRadius: 3, overflow: 'hidden' }}>
                 <motion.div initial={{ width: 0 }} animate={{ width: '88%' }} transition={{ duration: 1, delay: 0.5 }} style={{ height: '100%', background: 'var(--cyan)', boxShadow: '0 0 10px var(--cyan)' }} />
@@ -249,7 +252,7 @@ export default function AnalyticsPage() {
                 <span style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>Target: 95%</span>
                 <span style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--cyan)', fontWeight: 'bold' }}>Current: 88%</span>
               </div>
-            </div>
+            </HoverTooltip>
           </motion.div>
         </div>
 

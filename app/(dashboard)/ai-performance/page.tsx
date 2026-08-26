@@ -1,6 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import { HoverTooltip } from '@/components/ui/MetricCard';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -71,11 +72,11 @@ export default function AIPerformancePage() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         
         {/* 🛡️ TARGET 1: MORTALITY TRACKING DASHBOARD */}
-        <motion.div id="spotlight-mortality" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="card" style={{ padding: 24 }}>
-          <div style={{ marginBottom: 24 }}>
+        <motion.div id="spotlight-mortality" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -3, boxShadow: '0 8px 28px rgba(0,0,0,0.35)' }} transition={{ type: 'spring', stiffness: 260, damping: 22 }} className="card" style={{ padding: 24 }}>
+          <HoverTooltip tooltip="Compares the AI's predicted mortality risk at time of dispatch against the actual outcome recorded after the incident closed — the gap between the two lines is model error." style={{ marginBottom: 24, display: 'block' }}>
             <h2 style={{ fontSize: 14, fontFamily: 'var(--mono)', color: 'var(--cyan)', textTransform: 'uppercase', letterSpacing: 1 }}>Mortality Prediction Engine</h2>
             <p style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 4 }}>Real-time AI Risk Prediction vs Post-Incident Actual Outcomes</p>
-          </div>
+          </HoverTooltip>
           
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -103,11 +104,11 @@ export default function AIPerformancePage() {
         </motion.div>
 
         {/* 🛡️ TARGET 2: ESCALATION FREQUENCY */}
-        <motion.div id="spotlight-escalation" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card" style={{ padding: 24 }}>
-          <div style={{ marginBottom: 24 }}>
+        <motion.div id="spotlight-escalation" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} whileHover={{ y: -3, boxShadow: '0 8px 28px rgba(0,0,0,0.35)' }} className="card" style={{ padding: 24 }}>
+          <HoverTooltip tooltip="For each injury type, how often a field responder bypassed the AI's recommendation and called in a licensed doctor instead." style={{ marginBottom: 24, display: 'block' }}>
             <h2 style={{ fontSize: 14, fontFamily: 'var(--mono)', color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: 1 }}>Doctor Escalation Frequency</h2>
             <p style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 4 }}>Human Intervention Rate by Injury Classification</p>
-          </div>
+          </HoverTooltip>
           
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">

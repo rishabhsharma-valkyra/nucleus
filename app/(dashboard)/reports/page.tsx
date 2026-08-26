@@ -259,7 +259,6 @@ export default function ReportsPage() {
             <input type="checkbox" className="accent-cyan-500 cursor-pointer" checked={selectedIds.size > 0 && selectedIds.size === filteredSessions.length} onChange={toggleAll} />
           </div>
           <div style={{ flex: 1 }}>Session Data</div>
-          <div style={{ width: 120, display: 'none' }} className="md:block">Protocol</div>
           <div style={{ width: 100, textAlign: 'right' }}>Severity Index</div>
           <div style={{ width: 140, textAlign: 'right', display: 'none' }} className="sm:block">Metrics</div>
         </div>
@@ -280,7 +279,6 @@ export default function ReportsPage() {
               }
 
               const isSelected = selectedIds.has(s.session_id);
-              const isCompliant = s.triage_category === 'Green' || Math.random() > 0.2;
 
               return (
                 <motion.div
@@ -309,19 +307,6 @@ export default function ReportsPage() {
                     <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
                       {formatDate(s.created_at)}
                     </div>
-                  </div>
-
-                  {/* Protocol Adherence Badge */}
-                  <div style={{ width: 120, display: 'none' }} className="md:block">
-                    {isCompliant ? (
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 4, background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', fontSize: 10, fontFamily: 'var(--mono)', color: '#4ade80' }}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" /> Validated
-                      </div>
-                    ) : (
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: 10, fontFamily: 'var(--mono)', color: '#fbbf24' }}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Deviation
-                      </div>
-                    )}
                   </div>
 
                   {/* PWAT Score */}

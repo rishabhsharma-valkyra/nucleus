@@ -2,27 +2,13 @@
 import { useSummary, useAllSessions } from '@/hooks';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { pwatColor, triageClass, formatTime } from '@/lib/utils';
-import { motion, useMotionValue, useTransform, animate, Variants, AnimatePresence, useSpring } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { motion, Variants } from 'framer-motion';
 import VoiceTour, { TourStep } from '@/components/VoiceTour';
+import { DEVICES, RESPONDERS } from '@/config/fleet';
+import { AnimatedNumber, ScannerSweep, MetricCard } from '@/components/ui/MetricCard';
 
 // 🛡️ ENFORCED "PHOTOGRAPHIC WOUND ASSESSMENT TOOL"
-import { useSession } from 'next-auth/react'; 
-
-function AnimatedNumber({ value, decimals = 0 }: { value: any, decimals?: number }) {
-  const count = useMotionValue(0);
-  const formatted = useTransform(count, (latest) => latest.toFixed(decimals));
-
-  useEffect(() => {
-    if (value !== '—' && !isNaN(Number(value))) {
-      const controls = animate(count, Number(value), { duration: 1.5, ease: "easeOut" });
-      return controls.stop;
-    }
-  }, [value, count]);
-
-  if (value === '—') return <span>—</span>;
-  return <motion.span>{formatted}</motion.span>;
-}
+import { useSession } from 'next-auth/react';
 
 const staggerReveal: Variants = {
   hidden: { opacity: 0, y: 15 },
@@ -32,67 +18,6 @@ const staggerReveal: Variants = {
     transition: { delay: i * 0.05, duration: 0.4, ease: "easeOut" },
   }),
 };
-
-function ScannerSweep() {
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none rounded-lg opacity-[0.15]">
-      <motion.div
-        className="w-full h-[1px] bg-gradient-to-r from-transparent via-[#22d3ee] to-transparent shadow-[0_0_8px_rgba(34,211,238,0.8)]"
-        animate={{ y: ["-100%", "600%"] }}
-        transition={{ duration: 4, repeat: Infinity, ease: "linear", delay: Math.random() * 2 }}
-      />
-    </div>
-  );
-}
-
-function MetricCard({ label, value, sub, color, bg, decimals = 0, tooltip }: any) {
-  const [isHovered, setIsHovered] = useState(false);
-  
-  const cursorX = useMotionValue(-100);
-  const cursorY = useMotionValue(-100);
-
-  const springConfig = { damping: 25, stiffness: 300, mass: 0.5 };
-  const smoothX = useSpring(cursorX, springConfig);
-  const smoothY = useSpring(cursorY, springConfig);
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    cursorX.set(e.clientX + 15);
-    cursorY.set(e.clientY - 40);
-  };
-
-  return (
-    <div 
-      className="relative"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onMouseMove={handleMouseMove}
-    >
-      <AnimatePresence>
-        {isHovered && tooltip && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ duration: 0.15 }}
-            style={{ position: 'fixed', left: smoothX, top: smoothY }}
-            className="w-max max-w-[220px] bg-slate-900 border border-slate-700/80 rounded px-3 py-2 text-[11px] leading-relaxed text-slate-200 font-mono shadow-[0_10px_20px_rgba(0,0,0,0.5)] z-[9999] pointer-events-none"
-          >
-            {tooltip}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className={`metric-card ${bg} relative transition-all duration-200 hover:-translate-y-[2px] hover:shadow-[inset_0_0_20px_rgba(255,255,255,0.02)] overflow-hidden`}>
-        <ScannerSweep />
-        <div className="metric-label relative z-10">{label}</div>
-        <div className={`metric-value ${color} relative z-10`}>
-          <AnimatedNumber value={value} decimals={decimals} />
-        </div>
-        <div className="metric-delta relative z-10" dangerouslySetInnerHTML={{ __html: sub }} />
-      </div>
-    </div>
-  );
-}
 
 export default function OverviewPage() {
   const { data: summary, isLoading: sumLoading } = useSummary();
@@ -283,22 +208,28 @@ export default function OverviewPage() {
           <ScannerSweep />
           <div className="card-header relative z-10">
             <span className="card-title">AR Device Fleet</span>
-            <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>24 / 31 ONLINE</span>
+            <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
+              {DEVICES.filter(d => d.status === 'LIVE' || d.status === 'ONLINE').length} / {DEVICES.length} ONLINE
+            </span>
           </div>
           <div className="relative z-10">
-            {[
-              { name: 'XREAL Air 2 Ultra · #07', user: 'SGT. M. Torres · Unit 4', status: 'd-online', time: 'LIVE', live: true },
-              { name: 'XREAL One Pro · #14',     user: 'CPL. A. Chen · Unit 2',   status: 'd-online', time: 'LIVE', live: true },
-              { name: 'XREAL Air 2 Ultra · #03', user: 'PFC. D. Reyes · Unit 1',  status: 'd-online', time: '2m ago', live: false },
-              { name: 'XREAL One Pro · #22',     user: 'SGT. L. Park · Unit 6',   status: 'd-idle',   time: 'IDLE', live: false },
-              { name: 'XREAL Air 2 Ultra · #11', user: 'CPL. R. James · Unit 3',  status: 'd-offline',time: 'OFFLINE', live: false },
-            ].map((d, i) => (
-              <motion.div key={d.name} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 + (i * 0.1) }} className="device-row hover:bg-white/5 transition-colors">
-                <div className={`d-status ${d.status}`} />
-                <div className="d-info"><div className="d-name">{d.name}</div><div className="d-user">{d.user}</div></div>
-                <div className={`d-time${d.live ? ' live' : ''}`} style={d.status === 'd-idle' ? { color: 'var(--amber)' } : {}}>{d.time}</div>
-              </motion.div>
-            ))}
+            {DEVICES.map((d, i) => {
+              const responder = RESPONDERS.find(r => r.device_id === d.id);
+              const dotClass = d.status === 'LIVE' || d.status === 'ONLINE' ? 'd-online' : d.status === 'IDLE' ? 'd-idle' : 'd-offline';
+              const isLive = d.status === 'LIVE';
+              return (
+                <motion.div key={d.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 + (i * 0.1) }} className="device-row hover:bg-white/5 transition-colors">
+                  <div className={`d-status ${dotClass}`} />
+                  <div className="d-info">
+                    <div className="d-name">{d.model} · {d.serial}</div>
+                    <div className="d-user">{responder ? `${responder.name} · ${responder.unit}` : `Unassigned · ${d.unit}`}</div>
+                  </div>
+                  <div className={`d-time${isLive ? ' live' : ''}`} style={d.status === 'IDLE' ? { color: 'var(--amber)' } : {}}>
+                    {d.status === 'IDLE' ? 'IDLE' : d.status === 'OFFLINE' ? 'OFFLINE' : d.status === 'LIVE' ? 'LIVE' : d.last_sync}
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         </motion.div>
 

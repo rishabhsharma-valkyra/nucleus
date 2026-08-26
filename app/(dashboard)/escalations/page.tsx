@@ -4,6 +4,7 @@ import { subDays, subMonths, startOfMonth, isAfter, isEqual, parseISO } from 'da
 import { ESCALATIONS, INJURY_TYPES } from '@/config/escalations';
 import { RESPONDERS, INCIDENT_TYPES } from '@/config/fleet';
 import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { MetricCard } from '@/components/ui/MetricCard';
 
 // 🛡️ IMPORTS FOR THE PERSONALIZED VOICE TOUR
 import { useSession } from 'next-auth/react';
@@ -20,6 +21,7 @@ const MIN_SAMPLE = 3;
 
 const injuryLabel = (t: string) => INCIDENT_TYPES.find(i => i.value === t)?.label.split(' — ')[1] ?? t;
 const rateColor = (pct: number) => pct >= 25 ? 'var(--red)' : pct >= 15 ? 'var(--amber)' : 'var(--green)';
+const rateColorClass = (pct: number) => pct >= 25 ? 'cv-red' : pct >= 15 ? 'cv-amber' : 'cv-green';
 
 export default function EscalationsPage() {
   const [period, setPeriod] = useState<Period>('month');
@@ -115,22 +117,38 @@ export default function EscalationsPage() {
 
       {/* 🛡️ TARGET 1: Escalation Metrics */}
       <div id="spotlight-escalation-metrics" className="metrics-grid" style={{ marginBottom:20 }}>
-        <div className="metric-card">
-          <div className="metric-label">Total Escalations</div>
-          <div className="metric-value" style={{ color:'var(--text)' }}>{escalatedCount}<span style={{ fontSize:12, color:'var(--text3)', fontWeight:400 }}> / {total} reviewed</span></div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-label">Overall Escalation Rate</div>
-          <div className="metric-value" style={{ color:rateColor(overallRate) }}>{overallRate.toFixed(1)}%</div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-label">Highest-Rate Injury Type</div>
-          <div className="metric-value" style={{ fontSize:18, color:'var(--text)' }}>{worstType ? injuryLabel(worstType.type) : '—'}</div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-label">Highest-Rate Responder</div>
-          <div className="metric-value" style={{ fontSize:16, color:'var(--text)' }}>{worstResponder?.name ?? '—'}</div>
-        </div>
+        <MetricCard
+          tooltip="How many reviewed sessions this period resulted in a doctor being called in, out of the total reviewed."
+          label="Total Escalations"
+          value={escalatedCount}
+          sub={`<span style="color:var(--text3)">of ${total} reviewed</span>`}
+          color=""
+          bg=""
+        />
+        <MetricCard
+          tooltip="The share of reviewed sessions this period where a responder escalated to a doctor instead of relying on the AI assessment."
+          label="Overall Escalation Rate"
+          value={overallRate}
+          decimals={1}
+          suffix="%"
+          color={rateColorClass(overallRate)}
+          bg=""
+          sub={overallRate >= 25 ? '<span class="delta-down">⚠ Elevated escalation rate</span>' : undefined}
+        />
+        <MetricCard
+          tooltip="The injury type with the highest doctor-escalation rate in this period — where field responders trust the AI least."
+          label="Highest-Rate Injury Type"
+          value={worstType ? injuryLabel(worstType.type) : '—'}
+          color=""
+          bg=""
+        />
+        <MetricCard
+          tooltip="The responder with the highest personal escalation rate in this period."
+          label="Highest-Rate Responder"
+          value={worstResponder?.name ?? '—'}
+          color=""
+          bg=""
+        />
       </div>
 
       {/* 🛡️ TARGET 2: Escalation Charts */}

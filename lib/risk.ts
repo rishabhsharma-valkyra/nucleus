@@ -1,11 +1,8 @@
-import { Incident, IncidentType } from '@/types';
-
-// Illustrative baseline mortality rates (%) per injury type — used only to
-// derive a stable, deterministic demo risk/outcome per incident. Not a real
-// clinical model.
-export const BASELINE_MORTALITY: Record<IncidentType, number> = {
-  GSW: 9, CRUSH: 7, BURN: 6, STAB: 5, BLUNT: 4, FRACTURE: 1,
-};
+// Illustrative, deterministic risk model driven by the real PWAT score of a
+// session (0-4 Minor · 4-8 Delayed · 8-12 Urgent · 12-20 Critical). Not a
+// live clinical model — see the disclosure banner on the Mortality page.
+// Previously this was keyed off a fabricated "incident type" baseline table;
+// now it's derived from an actual measured value per session.
 
 function hashToUnit(seed: string): number {
   let hash = 0;
@@ -13,16 +10,15 @@ function hashToUnit(seed: string): number {
   return (hash % 1000) / 1000;
 }
 
-type RiskInput = Pick<Incident, 'id' | 'type'>;
-
-export function predictedRiskPct(incident: RiskInput): number {
-  const baseline = BASELINE_MORTALITY[incident.type] ?? 5;
-  const variance = 0.6 + hashToUnit(`${incident.id}-risk`) * 1.0; // 0.6x - 1.6x
-  const risk = baseline * variance;
-  return Math.min(95, Math.max(1, Math.round(risk * 10) / 10));
+export function predictedRiskFromPwat(pwatScore: number, seedId: string): number {
+  const safePwat = Number(pwatScore) || 0; // guards against null/undefined on older rows
+  const base = safePwat * 4.5; // PWAT 20 (max) -> 90% baseline risk
+  const variance = 0.85 + hashToUnit(`${seedId}-risk`) * 0.3; // 0.85x - 1.15x
+  return Math.min(95, Math.max(1, Math.round(base * variance * 10) / 10));
 }
 
-export function predictedOutcomeDeceased(incident: RiskInput): boolean {
-  const baseline = BASELINE_MORTALITY[incident.type] ?? 5;
-  return hashToUnit(`${incident.id}-outcome`) * 100 < baseline;
+export function predictedOutcomeDeceased(pwatScore: number, seedId: string): boolean {
+  const safePwat = Number(pwatScore) || 0;
+  const base = safePwat * 4.5;
+  return hashToUnit(`${seedId}-outcome`) * 100 < base * 0.4;
 }

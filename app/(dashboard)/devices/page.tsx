@@ -1,5 +1,7 @@
 'use client';
 import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { HoverTooltip } from '@/components/ui/MetricCard';
 import { DEVICES, RESPONDERS } from '@/config/fleet';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { usePermission } from '@/hooks';
@@ -77,25 +79,34 @@ export default function DevicesPage() {
     <div className="pb-24">
       {/* 🛡️ TARGET 1: Fleet Health Stats */}
       <div id="spotlight-fleet-health" style={{ display:'flex', gap:12, marginBottom:20 }}>
-        <div style={{ flex:1, background:'var(--glass)', border:'1px solid var(--border)', borderRadius:'var(--r)', padding:'16px 18px', display:'flex', alignItems:'center', gap:20 }}>
-          <svg width={100} height={100} viewBox="0 0 100 100">
-            <circle cx={50} cy={50} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={10} />
-            <circle cx={50} cy={50} r={r} fill="none" stroke="var(--green)" strokeWidth={10}
-              strokeDasharray={circ} strokeDashoffset={circ * (1 - onlinePct/100)}
-              strokeLinecap="round" transform="rotate(-90 50 50)" style={{ filter:'drop-shadow(0 0 6px var(--green))' }} />
-            <text x={50} y={50} textAnchor="middle" dominantBaseline="middle" fill="#86efac" fontSize={18} fontWeight={700} fontFamily="Syne">{totalOnline}/{total}</text>
-          </svg>
-          <div>
-            <div style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)', letterSpacing:2, marginBottom:8, textTransform:'uppercase' }}>Fleet Health</div>
-            <div style={{ fontSize:28, fontWeight:800, color:'var(--green)', letterSpacing:-1 }}>{onlinePct}%</div>
-            <div style={{ fontSize:11, color:'var(--text3)', fontFamily:'var(--mono)' }}>Online · {totalOnline} of {total} devices</div>
+        <HoverTooltip className="flex-1" tooltip="Percentage of the AR device fleet currently online (LIVE or ONLINE), out of all registered hardware.">
+          <div style={{ background:'var(--glass)', border:'1px solid var(--border)', borderRadius:'var(--r)', padding:'16px 18px', display:'flex', alignItems:'center', gap:20, height:'100%' }}>
+            <svg width={100} height={100} viewBox="0 0 100 100">
+              <circle cx={50} cy={50} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={10} />
+              <circle cx={50} cy={50} r={r} fill="none" stroke="var(--green)" strokeWidth={10}
+                strokeDasharray={circ} strokeDashoffset={circ * (1 - onlinePct/100)}
+                strokeLinecap="round" transform="rotate(-90 50 50)" style={{ filter:'drop-shadow(0 0 6px var(--green))' }} />
+              <text x={50} y={50} textAnchor="middle" dominantBaseline="middle" fill="#86efac" fontSize={18} fontWeight={700} fontFamily="Syne">{totalOnline}/{total}</text>
+            </svg>
+            <div>
+              <div style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)', letterSpacing:2, marginBottom:8, textTransform:'uppercase' }}>Fleet Health</div>
+              <div style={{ fontSize:28, fontWeight:800, color:'var(--green)', letterSpacing:-1 }}>{onlinePct}%</div>
+              <div style={{ fontSize:11, color:'var(--text3)', fontFamily:'var(--mono)' }}>Online · {totalOnline} of {total} devices</div>
+            </div>
           </div>
-        </div>
-        {[{label:'LIVE',value:stats.live,color:'var(--green)'},{label:'ONLINE',value:stats.online,color:'var(--cyan)'},{label:'IDLE',value:stats.idle,color:'var(--amber)'},{label:'OFFLINE',value:stats.offline,color:'var(--text3)'}].map(s => (
-          <div key={s.label} style={{ flex:1, background:'var(--glass)', border:'1px solid var(--border)', borderRadius:'var(--r)', padding:'14px 18px', textAlign:'center' }}>
-            <div style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)', letterSpacing:2, marginBottom:6, textTransform:'uppercase' }}>{s.label}</div>
-            <div style={{ fontSize:28, fontWeight:800, color:s.color, letterSpacing:-1 }}>{s.value}</div>
-          </div>
+        </HoverTooltip>
+        {[
+          {label:'LIVE',value:stats.live,color:'var(--green)',tooltip:'Devices actively streaming wound telemetry right now.'},
+          {label:'ONLINE',value:stats.online,color:'var(--cyan)',tooltip:'Devices connected and ready, but not currently in an active session.'},
+          {label:'IDLE',value:stats.idle,color:'var(--amber)',tooltip:'Devices powered on but inactive for an extended period.'},
+          {label:'OFFLINE',value:stats.offline,color:'var(--text3)',tooltip:'Devices not currently connected to the network.'},
+        ].map(s => (
+          <HoverTooltip key={s.label} className="flex-1" tooltip={s.tooltip}>
+            <div style={{ background:'var(--glass)', border:'1px solid var(--border)', borderRadius:'var(--r)', padding:'14px 18px', textAlign:'center' }}>
+              <div style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)', letterSpacing:2, marginBottom:6, textTransform:'uppercase' }}>{s.label}</div>
+              <div style={{ fontSize:28, fontWeight:800, color:s.color, letterSpacing:-1 }}>{s.value}</div>
+            </div>
+          </HoverTooltip>
         ))}
       </div>
 
@@ -152,7 +163,15 @@ export default function DevicesPage() {
                 <td>
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                     <div style={{ width:44, height:5, borderRadius:3, background:'rgba(255,255,255,0.06)', overflow:'hidden' }}>
-                      <div style={{ width:`${d.battery_pct}%`, height:'100%', borderRadius:3, background:batteryColor(d.battery_pct) }} />
+                      <div style={{ width:`${d.battery_pct}%`, height:'100%', borderRadius:3, background:batteryColor(d.battery_pct), position:'relative', overflow:'hidden' }}>
+                        {(d.status === 'LIVE' || d.status === 'ONLINE') && (
+                          <motion.div
+                            className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-white/40 to-transparent"
+                            animate={{ x: ['-100%', '300%'] }}
+                            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                          />
+                        )}
+                      </div>
                     </div>
                     <span style={{ fontSize:11, fontFamily:'var(--mono)', fontWeight:600, color:batteryColor(d.battery_pct) }}>{d.battery_pct}%</span>
                   </div>
@@ -184,7 +203,16 @@ export default function DevicesPage() {
                 <td style={{ fontFamily:'var(--mono)', fontSize:11, color:'var(--text3)' }}>{d.unit}</td>
                 <td>
                   <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                    <div className={`d-status ${dotClass(d.status)}`} />
+                    <div style={{ position:'relative', width:8, height:8 }}>
+                      {d.status === 'LIVE' && (
+                        <motion.div
+                          style={{ position:'absolute', inset:0, borderRadius:'50%', border:'1px solid var(--green)' }}
+                          animate={{ boxShadow: ['0 0 0 0 rgba(74,222,128,0.5)', '0 0 0 6px rgba(74,222,128,0)'] }}
+                          transition={{ duration: 1.5, repeat: Infinity, ease: 'easeOut' }}
+                        />
+                      )}
+                      <div className={`d-status ${dotClass(d.status)}`} style={{ position:'absolute', inset:0 }} />
+                    </div>
                     <span style={{ fontSize:10, fontFamily:'var(--mono)', color: d.status==='LIVE'||d.status==='ONLINE' ? 'var(--green)' : d.status==='IDLE' ? 'var(--amber)' : 'var(--text3)' }}>{d.status}</span>
                   </div>
                 </td>
