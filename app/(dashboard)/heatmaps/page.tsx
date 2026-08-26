@@ -2,22 +2,36 @@
 
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
+import { HoverTooltip } from '@/components/ui/MetricCard';
 
 // 🛡️ IMPORTS FOR THE PERSONALIZED VOICE TOUR
 import { useSession } from 'next-auth/react';
 import VoiceTour, { TourStep } from '@/components/VoiceTour';
 
 // --- MOCK GEOGRAPHIC INCIDENT DATA ---
+// Seeded (not Math.random()) so the map is stable across reloads/hot-refresh
+// instead of reshuffling every time the module re-evaluates.
+function seededFraction(seed: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  hash >>>= 0;
+  return (hash % 10000) / 10000;
+}
+
 const MOCK_INCIDENTS = Array.from({ length: 45 }).map((_, i) => {
-  const isCritical = Math.random() > 0.7;
-  const zone = ['NORTH', 'SOUTH', 'EAST', 'WEST'][Math.floor(Math.random() * 4)];
+  const s = (tag: string) => seededFraction(`heatmap-${i}-${tag}`);
+  const isCritical = s('crit') > 0.7;
+  const zone = ['NORTH', 'SOUTH', 'EAST', 'WEST'][Math.floor(s('zone') * 4)];
   return {
     id: `TRM-${1000 + i}`,
-    x: Math.floor(Math.random() * 80) + 10,
-    y: Math.floor(Math.random() * 80) + 10,
-    severity: isCritical ? 'Red' : Math.random() > 0.5 ? 'Orange' : 'Yellow',
+    x: Math.floor(s('x') * 80) + 10,
+    y: Math.floor(s('y') * 80) + 10,
+    severity: isCritical ? 'Red' : s('sev') > 0.5 ? 'Orange' : 'Yellow',
     zone: zone,
-    timeOffset: Math.random() * 72,
+    timeOffset: s('time') * 72,
   };
 });
 
@@ -225,21 +239,21 @@ export default function HeatmapPage() {
 
         {/* 🛡️ TARGET 3: FLOATING BOTTOM LEGEND */}
         <div id="spotlight-heatmap-legend" className="absolute bottom-6 left-6 pointer-events-none" style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'center', background: 'rgba(0,0,0,0.6)', padding: '12px 20px', borderRadius: '8px', border: '1px solid var(--border)', backdropFilter: 'blur(10px)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <HoverTooltip tooltip="Critical/Red triage incidents currently plotted on the map." className="pointer-events-auto" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(248,113,113,0.8)]" />
             <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text2)' }}>Severe / Red</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          </HoverTooltip>
+          <HoverTooltip tooltip="Delayed/Orange triage incidents currently plotted on the map." className="pointer-events-auto" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div className="w-2 h-2 rounded-full bg-amber-400" />
             <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text2)' }}>Delayed / Orange</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          </HoverTooltip>
+          <HoverTooltip tooltip="Monitored, stable incidents currently plotted on the map." className="pointer-events-auto" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div className="w-2 h-2 rounded-full bg-cyan-400" />
             <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text2)' }}>Monitored / Stable</span>
-          </div>
-          <div className="hidden sm:block" style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24, fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', letterSpacing: 1 }}>
+          </HoverTooltip>
+          <HoverTooltip tooltip="Total incidents currently visible under the active zone, time, and severity filters." className="hidden sm:block pointer-events-auto" style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24, fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', letterSpacing: 1 }}>
             LIVE DATA POINTS: <span style={{ color: 'white', fontWeight: 'bold' }}>{visibleIncidents.length}</span>
-          </div>
+          </HoverTooltip>
         </div>
 
       </motion.div>

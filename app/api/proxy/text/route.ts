@@ -11,7 +11,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const upstream = await fetch(
-      `${process.env.NEXT_PUBLIC_API_BASE}/gcs/text?path=${encodeURIComponent(path)}`
+      `${process.env.NEXT_PUBLIC_API_BASE}/gcs/text?path=${encodeURIComponent(path)}`,
+      { headers: { 'x-internal-key': process.env.INTERNAL_API_KEY ?? '' } }
     );
     return new Response(upstream.body, {
       headers: { 'Content-Type': 'text/plain' },

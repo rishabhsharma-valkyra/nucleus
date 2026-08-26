@@ -6,18 +6,25 @@ export const maxDuration = 30;
 const API_BASE_URL = process.env.HOSPITAL_API_URL || 'http://localhost:8000';
 const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
 
-async function fetchWithTimeout(url: string, options = {}, timeoutMs = 4000) {
+async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 4000) {
   console.log(`[HTTP] Fetching: ${url}`);
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
+    const response = await fetch(url, {
+      ...options,
+      headers: { ...(options.headers || {}), 'x-internal-key': process.env.INTERNAL_API_KEY ?? '' },
+      signal: controller.signal,
+    });
     clearTimeout(id);
+    if (!response.ok) {
+      console.error(`[HTTP ERROR] ${url} responded ${response.status}`);
+    }
     return response;
   } catch (err: any) {
     clearTimeout(id);
     console.error(`[HTTP ERROR] Failure on ${url}:`, err.message);
-    return null; 
+    return null;
   }
 }
 
@@ -106,8 +113,15 @@ export async function POST(req: Request) {
   }
 
   const systemPrompt = `You are the "Valkyra Oracle", an advanced tactical AI assistant managing the Valkyra Nucleus medical command center.
-Your tone is professional and concise. 
+Your tone is professional and concise.
 You are currently speaking to: ${userName} (Role: ${userRole}). Address them appropriately based on their role.
+
+DOMAIN DEFINITIONS (authoritative — never guess or substitute a different expansion for these terms):
+- PWAT = Photographic Wound Assessment Tool. It is a wound-severity SCORE on a 0-20 scale derived from AI analysis of the wound image — NOT "patient wait time", NOT a duration, and NOT measured in minutes or any other unit of time.
+  Scale bands: 0-4 Minor · 4-8 Delayed · 8-12 Urgent · 12-20 Critical. A HIGHER PWAT score means a MORE SEVERE wound.
+  "pwat_stats" / "average", "minimum", "maximum" fields below are PWAT score values (unitless, 0-20), not durations.
+- Triage category (Red/Orange/Yellow/Green) is the field responder's severity classification, separate from but correlated with PWAT.
+- A "session" is one wound-scan capture event from an AR headset; there is no separate "incident" record yet, so sessions are what's being referred to when discussing incidents.
 
 REAL-TIME SYSTEM METRICS:
 - Summary Overview: ${summaryString}
@@ -117,15 +131,15 @@ REQUESTED TELEMETRY (If applicable):
 ${targetPatientString}
 
 SYSTEM RULES:
-1. Use the data provided above to answer queries. 
+1. Use the data provided above to answer queries — do not invent units, timeframes, or expansions for domain terms that aren't given here.
 2. If targeted telemetry is provided, format it clearly into a tactical medical briefing.`;
 
-  console.log('\n🧠 [GROQ] Initializing AI Stream (Model: llama-3.1-8b-instant)...');
+  console.log('\n🧠 [GROQ] Initializing AI Stream (Model: groq/compound-mini)...');
 
   const result = streamText({
-    model: groq('llama-3.1-8b-instant'), 
+    model: groq('groq/compound-mini'),
     system: systemPrompt,
-    messages: coreMessages, 
+    messages: coreMessages,
   });
 
   console.log('🌊 [STREAM] Pushing response stream to frontend...');

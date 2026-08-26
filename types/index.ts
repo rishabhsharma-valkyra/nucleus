@@ -81,6 +81,7 @@ export interface Responder {
   valkyra_usage_pct: number;
   avg_response_min: number;
   resolution_rate_pct: number;
+  incidents_handled: number;
 }
 
 export interface Device {

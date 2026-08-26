@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
+import { HoverTooltip } from '@/components/ui/MetricCard';
 
 // 🛡️ IMPORTS FOR THE PERSONALIZED VOICE TOUR
 import { useSession } from 'next-auth/react';
@@ -94,32 +95,55 @@ export default function TrainingIntelPage() {
           {/* 🛡️ TARGET 1: TOP STATS GRID */}
           <div id="spotlight-training-metrics" className="metrics-grid" style={{ marginBottom: 24 }}>
             {/* Adherence Card */}
-            <motion.div variants={cardVariant} className="metric-card mc-cyan relative overflow-hidden transition-all hover:-translate-y-1">
-              <div className="metric-label relative z-10">Global Protocol Adherence</div>
-              <div className="metric-value cv-cyan relative z-10">88.4%</div>
-              <div className="metric-delta relative z-10 text-green-400">↑ 2.1% vs last month</div>
-              {/* Progress Bar */}
-              <div style={{ height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, marginTop: 12, overflow: 'hidden' }}>
-                <motion.div initial={{ width: 0 }} animate={{ width: '88.4%' }} transition={{ duration: 1 }} style={{ height: '100%', background: 'var(--cyan)', boxShadow: '0 0 8px var(--cyan)' }} />
-              </div>
-            </motion.div>
+            <HoverTooltip tooltip="Percentage of field procedures performed in line with clinical protocol, averaged across all monitored units.">
+              <motion.div variants={cardVariant} className="metric-card mc-cyan relative overflow-hidden transition-all hover:-translate-y-1">
+                <div className="metric-label relative z-10">Global Protocol Adherence</div>
+                <div className="metric-value cv-cyan relative z-10">88.4%</div>
+                <div className="metric-delta relative z-10 text-green-400">↑ 2.1% vs last month</div>
+                {/* Progress Bar */}
+                <div style={{ height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, marginTop: 12, overflow: 'hidden' }}>
+                  <motion.div initial={{ width: 0 }} animate={{ width: '88.4%' }} transition={{ duration: 1 }} style={{ height: '100%', background: 'var(--cyan)', boxShadow: '0 0 8px var(--cyan)' }} />
+                </div>
+              </motion.div>
+            </HoverTooltip>
 
             {/* Vulnerabilities Card */}
-            <motion.div variants={cardVariant} className="metric-card mc-red relative overflow-hidden transition-all hover:-translate-y-1">
-              <div className="metric-label relative z-10">Critical Vulnerabilities</div>
-              <div className="metric-value cv-red relative z-10">3</div>
-              <div className="metric-delta relative z-10 flex items-center gap-2" style={{ color: 'var(--amber)' }}>
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.8)]" /> 
-                Immediate drills recommended
-              </div>
-            </motion.div>
+            <HoverTooltip tooltip="Number of procedural gaps flagged as high-risk by continuous AI audit of field telemetry.">
+              <motion.div variants={cardVariant} className="metric-card mc-red relative overflow-hidden transition-all hover:-translate-y-1">
+                <div className="metric-label relative z-10">Critical Vulnerabilities</div>
+                <div className="metric-value cv-red relative z-10">3</div>
+                <div className="metric-delta relative z-10 flex items-center gap-2" style={{ color: 'var(--amber)' }}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
+                  Immediate drills recommended
+                </div>
+              </motion.div>
+            </HoverTooltip>
 
             {/* Completion Card */}
-            <motion.div variants={cardVariant} className="metric-card mc-blue relative overflow-hidden transition-all hover:-translate-y-1">
-              <div className="metric-label relative z-10">Drill Completion Rate</div>
-              <div className="metric-value cv-blue relative z-10">94%</div>
-              <div className="metric-delta relative z-10" style={{ color: 'var(--text3)' }}>Trailing 30 Days · 12/14 Units Certified</div>
-            </motion.div>
+            <HoverTooltip tooltip="Share of assigned remedial drills completed by field units in the last 30 days.">
+              <motion.div variants={cardVariant} className="metric-card mc-blue relative overflow-hidden transition-all hover:-translate-y-1">
+                <div className="metric-label relative z-10">Drill Completion Rate</div>
+                <div className="relative z-10" style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 4 }}>
+                  <svg width={56} height={56} viewBox="0 0 56 56" style={{ flexShrink: 0 }}>
+                    <circle cx={28} cy={28} r={22} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={6} />
+                    <motion.circle
+                      cx={28} cy={28} r={22} fill="none" stroke="var(--cyan)" strokeWidth={6}
+                      strokeLinecap="round" transform="rotate(-90 28 28)"
+                      style={{ filter: 'drop-shadow(0 0 5px var(--cyan))' }}
+                      strokeDasharray={2 * Math.PI * 22}
+                      initial={{ strokeDashoffset: 2 * Math.PI * 22 }}
+                      animate={{ strokeDashoffset: 2 * Math.PI * 22 * (1 - 0.94) }}
+                      transition={{ duration: 1.2, ease: 'easeOut', delay: 0.3 }}
+                    />
+                  </svg>
+                  <div>
+                    <div className="metric-value cv-blue" style={{ marginBottom: 0 }}>94%</div>
+                    <div className="metric-delta" style={{ color: 'var(--text3)' }}>12/14 Units Certified</div>
+                  </div>
+                </div>
+                <div className="metric-delta relative z-10" style={{ color: 'var(--text3)', marginTop: 8 }}>Trailing 30 Days</div>
+              </motion.div>
+            </HoverTooltip>
           </div>
 
           {/* SPLIT WORKSPACE */}

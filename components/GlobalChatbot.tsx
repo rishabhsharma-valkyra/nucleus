@@ -6,18 +6,71 @@ import { useChat } from '@ai-sdk/react';
 import { Canvas } from '@react-three/fiber';
 import { Environment } from '@react-three/drei';
 import { useSession } from 'next-auth/react';
-import { useRole } from '@/hooks'; 
+import { useRole, useSummary, useAllSessions } from '@/hooks';
+import { useNucleusStore } from '@/store/useNucleusStore';
 import ProceduralBot from './ProceduralBot';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-const PROACTIVE_MESSAGES = [
-  "Anomaly detected in the triage data.",
-  "Shall we review the latest PWAT scores?",
-  "Systems optimal. Awaiting your query.",
-  "Notice the spike in Red critical cases?"
+// Builds the floating thought-bubble pool from real live data instead of a
+// fixed script, so the nudges reflect what's actually happening right now.
+function buildProactiveMessages(summary: any, sessionCount: number): string[] {
+  const msgs: string[] = [];
+  const redCount = summary?.triage_distribution?.Red?.count ?? 0;
+  const maxPwat = summary?.pwat_stats?.maximum;
+  const avgPwat = summary?.pwat_stats?.average ?? summary?.avg_pwat;
+
+  if (redCount > 0) msgs.push(`${redCount} Red-triage case${redCount > 1 ? 's' : ''} active right now — want a summary?`);
+  if (maxPwat) msgs.push(`Highest PWAT score on record is ${Number(maxPwat).toFixed(1)}. Want the details?`);
+  if (avgPwat) msgs.push(`Average PWAT across all cases is ${Number(avgPwat).toFixed(1)}.`);
+  if (sessionCount > 0) msgs.push(`${sessionCount} sessions recorded so far. Ask me anything about them.`);
+  msgs.push('Systems optimal. Awaiting your query.');
+  return msgs;
+}
+
+const QUICK_PROMPTS = [
+  "Summarize today's cases",
+  "Show me the Red triage cases",
+  "What's the highest PWAT score right now?",
 ];
+
+// Two regexes, not one reused with both .replace and .test — a global-flag
+// regex carries lastIndex state across .test() calls, which silently flips
+// between true/false on identical input across re-renders.
+const UUID_RE = /\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/gi;
+const UUID_TEST_RE = /\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/i;
+
+// Turns any raw session UUID the model mentions into a clickable markdown
+// link the custom `a` renderer below recognizes and turns into a chip that
+// opens the real patient modal, instead of leaving it as inert text.
+function linkifySessionIds(text: string): string {
+  return text.replace(UUID_RE, (match) => `[${match.slice(0, 8)}…](session:${match})`);
+}
+
+function getMessageText(m: any): string {
+  const textElements: string[] = [];
+  if (m.content) textElements.push(m.content);
+  if (Array.isArray(m.parts)) {
+    m.parts.forEach((part: any) => {
+      if (part.type === 'text' && part.text && !m.content) textElements.push(part.text);
+    });
+  }
+  return textElements.join('\n');
+}
+
+// Lightweight heuristic follow-ups keyed off what the reply actually said,
+// so they read as a reaction to the answer rather than a generic menu.
+function getFollowUps(text: string): string[] {
+  const t = text.toLowerCase();
+  const suggestions: string[] = [];
+  if (UUID_TEST_RE.test(text)) suggestions.push('Open that session');
+  if (t.includes('red') || t.includes('critical')) suggestions.push('Show me the Red triage cases');
+  if (t.includes('pwat')) suggestions.push('What does that PWAT score mean?');
+  if (t.includes('escalat')) suggestions.push('Which responder escalates most?');
+  if (suggestions.length === 0) suggestions.push('What should I check next?');
+  return suggestions.slice(0, 2);
+}
 
 // ==========================================
 // 1. THE WRAPPER 
@@ -143,10 +196,19 @@ function ExactGeminiWaveform({ lastSpeechTimeRef }: { lastSpeechTimeRef: React.M
 function OracleChatCore({ session, role }: { session: any, role: string | null }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
-  
-  const [tooltipText, setTooltipText] = useState(PROACTIVE_MESSAGES[0]);
+  const [noticeTrigger, setNoticeTrigger] = useState(0);
+
+  // Real live data — drives the proactive thought bubbles, the bot's
+  // data-reactive mood color, and inline session chips in replies.
+  const { data: summary } = useSummary();
+  const { data: sessionsData } = useAllSessions();
+  const sessions = sessionsData?.sessions ?? [];
+  const redCount = summary?.triage_distribution?.Red?.count ?? 0;
+  const setActivePatientId = useNucleusStore((s) => s.setActivePatientId);
+
+  const [tooltipText, setTooltipText] = useState('Systems optimal. Awaiting your query.');
   const [showTooltip, setShowTooltip] = useState(false);
-  
+
   const [input, setInput] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -248,13 +310,20 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
       return;
     }
     const interval = setInterval(() => {
-      const randomMsg = PROACTIVE_MESSAGES[Math.floor(Math.random() * PROACTIVE_MESSAGES.length)];
+      const pool = buildProactiveMessages(summary, sessions.length);
+      const randomMsg = pool[Math.floor(Math.random() * pool.length)];
       setTooltipText(randomMsg);
       setShowTooltip(true);
       setTimeout(() => setShowTooltip(false), 6000);
-    }, 20000); 
+    }, 20000);
     return () => clearInterval(interval);
-  }, [isOpen, isHovered]);
+  }, [isOpen, isHovered, summary, sessions.length]);
+
+  // One-shot "notice" beat for the bot avatar — fires when the panel opens,
+  // so it visibly acknowledges you instead of just sitting there animating.
+  useEffect(() => {
+    if (isOpen) setNoticeTrigger((n) => n + 1);
+  }, [isOpen]);
 
   const handleFormSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -305,6 +374,22 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
     ),
     th: ({ node, ...props }: any) => <th className="bg-cyan-950/40 border-b border-cyan-800/50 p-2.5 font-mono text-cyan-400 text-[10px] uppercase tracking-wider" {...props} />,
     td: ({ node, ...props }: any) => <td className="border-b border-cyan-900/20 p-2.5 text-slate-200 text-[12px] last:border-b-0" {...props} />,
+    a: ({ node, href, children, ...props }: any) => {
+      if (typeof href === 'string' && href.startsWith('session:')) {
+        const sessionId = href.slice('session:'.length);
+        return (
+          <button
+            type="button"
+            onClick={() => setActivePatientId(sessionId)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 font-mono text-[11px] hover:bg-cyan-500/20 hover:border-cyan-400/50 transition-all align-middle"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+            {children}
+          </button>
+        );
+      }
+      return <a href={href} target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline hover:text-cyan-300" {...props}>{children}</a>;
+    },
     code: ({ node, inline, className, children, ...props }: any) => {
       const match = /language-(\w+)/.exec(className || '');
       return !inline && match ? (
@@ -320,16 +405,10 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
   };
 
   const renderMessageContent = (m: any) => {
-    const textElements: string[] = [];
-    if (m.content) textElements.push(m.content);
-    if (Array.isArray(m.parts)) {
-      m.parts.forEach((part: any) => {
-        if (part.type === 'text' && part.text && !m.content) textElements.push(part.text);
-      });
-    }
+    const text = linkifySessionIds(getMessageText(m));
     return (
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-        {textElements.join('\n')}
+        {text}
       </ReactMarkdown>
     );
   };
@@ -351,9 +430,9 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
         transition={{ type: 'spring', damping: 20, stiffness: 120, delay: 0.2 }}
         className="fixed bottom-6 right-6 z-[100] flex justify-center pointer-events-none"
       >
-        <div 
+        <div
           className="relative w-28 h-28 pointer-events-auto flex items-center justify-center group"
-          onMouseEnter={() => { setIsHovered(true); setTooltipText("Click to deploy Valkyra AI."); setShowTooltip(true); }}
+          onMouseEnter={() => { setIsHovered(true); setTooltipText("Click to deploy Valkyra AI."); setShowTooltip(true); setNoticeTrigger((n) => n + 1); }}
           onMouseLeave={() => { setIsHovered(false); setShowTooltip(false); }}
         >
           {/* 🛡️ NEW THOUGHT CLOUD BUBBLE */}
@@ -401,9 +480,9 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
             <Canvas camera={{ position: [0, 0.3, 4.5], fov: 45 }}>
               <ambientLight intensity={0.8} />
               <spotLight position={[5, 5, 5]} intensity={3} color="#ffffff" />
-              <spotLight position={[-5, -5, -2]} intensity={1} color="#22d3ee" />
+              <spotLight position={[-5, -5, -2]} intensity={1} color={redCount > 0 ? '#f87171' : '#22d3ee'} />
               <Environment preset="city" />
-              <ProceduralBot isLoading={isLoading} />
+              <ProceduralBot isLoading={isLoading} alert={redCount > 0} noticeTrigger={noticeTrigger} />
             </Canvas>
           </div>
         </div>
@@ -446,33 +525,84 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
 
               <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6 flex flex-col gap-8 cyber-scrollbar">
                 
-                {messages.map((m: any) => {
+                {messages.map((m: any, i: number) => {
                   const isUser = m.role === 'user';
+                  const isLastMessage = i === messages.length - 1;
+                  const isStreamingThis = !isUser && isLastMessage && chatStatus === 'streaming';
+                  const showFollowUps = !isUser && isLastMessage && chatStatus === 'ready' && messages.length > 1;
                   return (
-                    <motion.div 
+                    <motion.div
                       key={m.id}
-                      initial={{ opacity: 0, y: 15, scale: 0.95 }} 
+                      initial={{ opacity: 0, y: 15, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       className={`flex flex-col max-w-[88%] ${isUser ? 'self-end items-end' : 'self-start items-start'}`}
                     >
                       <span className="font-mono text-[10px] text-slate-400 mb-1.5 tracking-wider uppercase px-1">
                         {isUser ? firstName : 'Valkyra System'}
                       </span>
-                      
-                      <div 
+
+                      <div
                         className={`
                           px-4 py-3 text-[13px] shadow-lg
-                          ${isUser 
-                            ? 'bg-slate-800 text-slate-100 rounded-2xl rounded-tr-sm border-r-2 border-slate-600' 
+                          ${isUser
+                            ? 'bg-slate-800 text-slate-100 rounded-2xl rounded-tr-sm border-r-2 border-slate-600'
                             : 'bg-cyan-950/20 text-cyan-50 rounded-2xl rounded-tl-sm border-l-2 border-cyan-500'}
                         `}
                       >
                         {renderMessageContent(m)}
+                        {isStreamingThis && (
+                          <motion.span
+                            className="inline-block w-[7px] h-[13px] bg-cyan-400 ml-0.5 align-middle"
+                            animate={{ opacity: [1, 1, 0, 0] }}
+                            transition={{ duration: 0.9, repeat: Infinity, times: [0, 0.5, 0.5, 1] }}
+                          />
+                        )}
                       </div>
+
+                      {showFollowUps && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.15 }}
+                          className="flex flex-wrap gap-2 mt-2.5"
+                        >
+                          {getFollowUps(getMessageText(m)).map((prompt) => (
+                            <button
+                              key={prompt}
+                              onClick={() => sendMessage({ text: prompt })}
+                              className="px-3 py-1.5 rounded-full border border-cyan-900/50 bg-cyan-950/10 text-cyan-200/90 text-[11px] font-mono hover:bg-cyan-950/30 hover:border-cyan-500/40 transition-all"
+                            >
+                              {prompt}
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
                     </motion.div>
                   );
                 })}
                 
+                {messages.length === 1 && chatStatus === 'ready' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                    className="flex flex-col gap-2 self-start w-full"
+                  >
+                    <span className="font-mono text-[9px] text-slate-500 tracking-widest uppercase px-1">Quick actions</span>
+                    <div className="flex flex-col gap-2">
+                      {QUICK_PROMPTS.map((prompt) => (
+                        <button
+                          key={prompt}
+                          onClick={() => sendMessage({ text: prompt })}
+                          className="text-left px-3.5 py-2.5 rounded-lg border border-cyan-900/40 bg-cyan-950/10 text-cyan-100/90 text-[12px] font-mono hover:bg-cyan-950/30 hover:border-cyan-500/40 transition-all"
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
                 {chatStatus === 'submitted' && (
                   <motion.div 
                     initial={{ opacity: 0, y: 15, scale: 0.95 }} 
@@ -483,11 +613,16 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                       Valkyra System
                     </span>
                     <div className="px-4 py-3 shadow-lg bg-cyan-950/20 text-cyan-50 rounded-2xl rounded-tl-sm border-l-2 border-cyan-500 font-mono">
-                      <div className="text-cyan-400 text-xs animate-pulse flex items-center gap-3 py-1">
-                        <div className="relative w-4 h-4">
-                          <div className="absolute inset-0 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin"></div>
+                      <div className="text-cyan-400 text-xs flex items-center gap-3 py-1">
+                        <div className="w-9 h-9 flex-shrink-0 -my-2">
+                          <Canvas camera={{ position: [0, 0.3, 4.5], fov: 45 }}>
+                            <ambientLight intensity={0.9} />
+                            <spotLight position={[3, 3, 3]} intensity={2.5} color="#ffffff" />
+                            <spotLight position={[-3, -3, -1]} intensity={1} color="#22d3ee" />
+                            <ProceduralBot isLoading />
+                          </Canvas>
                         </div>
-                        <span>Intercepting Live Telemetry...</span>
+                        <span className="animate-pulse">Intercepting Live Telemetry...</span>
                       </div>
                     </div>
                   </motion.div>

@@ -1,8 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { useIncidents, useResolveIncident, usePermission } from '@/hooks';
+import { useAllSessions } from '@/hooks';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PERMISSIONS } from '@/lib/rbac';
+import { pwatColor } from '@/lib/utils';
+import { sessionStatus } from '@/lib/sessionsAsIncidents';
+import { useNucleusStore } from '@/store/useNucleusStore';
+import { HoverTooltip } from '@/components/ui/MetricCard';
 
 // 🛡️ IMPORTS FOR THE PERSONALIZED VOICE TOUR
 import { useSession } from 'next-auth/react';
@@ -13,11 +16,10 @@ function MissionClock({ startTime }: { startTime: string }) {
   const [elapsed, setElapsed] = useState('00:00:00');
 
   useEffect(() => {
-    // For realistic demo purposes, pretend the incident started between 2 and 45 minutes ago
-    const mockStartTime = Date.now() - (Math.random() * 43 * 60000 + 120000);
-    
+    const start = new Date(startTime).getTime();
+
     const update = () => {
-      const diff = Math.floor((Date.now() - mockStartTime) / 1000);
+      const diff = Math.floor((Date.now() - start) / 1000);
       const h = Math.floor(diff / 3600).toString().padStart(2, '0');
       const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
       const s = (diff % 60).toString().padStart(2, '0');
@@ -33,13 +35,15 @@ function MissionClock({ startTime }: { startTime: string }) {
 }
 
 export default function IncidentsPage() {
-  const { data: incidentsData } = useIncidents();
-  const { mutate: resolve } = useResolveIncident();
-  const canResolve = usePermission(PERMISSIONS.INCIDENTS_RESOLVE);
-  const incidents = incidentsData?.incidents ?? [];
-  
-  // Filter exclusively to ACTIVE incidents
-  const activeIncidents = incidents.filter(i => i.status === 'Active');
+  const { data: sessionsData } = useAllSessions();
+  const setActivePatientId = useNucleusStore((s) => s.setActivePatientId);
+  const sessions = sessionsData?.sessions ?? [];
+
+  // "Incidents" here are recent sessions (last hour) treated as active field
+  // operations — there's no dedicated incidents feed yet. See lib/sessionsAsIncidents.ts.
+  const activeIncidents = sessions
+    .filter((s: any) => sessionStatus(s.created_at) === 'Active')
+    .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   // 🛡️ EXTRACT USER NAME FOR PERSONALIZED GREETING
   const { data: session } = useSession();
@@ -71,10 +75,12 @@ export default function IncidentsPage() {
             Active field operations requiring immediate oversight
           </p>
         </div>
-        <div className="text-right">
-          <div className="text-3xl font-bold font-mono text-white">{activeIncidents.length}</div>
-          <div className="text-[10px] font-mono tracking-widest text-slate-500 uppercase">Active Units</div>
-        </div>
+        <HoverTooltip tooltip="Sessions recorded in the last 24 hours, treated as active field incidents until a dedicated incidents feed exists.">
+          <div className="text-right">
+            <div className="text-3xl font-bold font-mono text-white">{activeIncidents.length}</div>
+            <div className="text-[10px] font-mono tracking-widest text-slate-500 uppercase">Active Units</div>
+          </div>
+        </HoverTooltip>
       </div>
 
       {/* Active Grid */}
@@ -86,12 +92,12 @@ export default function IncidentsPage() {
       ) : (
         <div className="space-y-4">
           <AnimatePresence>
-            {activeIncidents.map((inc, idx) => {
-              const isCritical = inc.type.includes('GSW') || inc.type.includes('Stab');
-              
+            {activeIncidents.map((inc: any, idx: number) => {
+              const isCritical = inc.triage_category === 'Red';
+
               return (
-                <motion.div 
-                  key={inc.id}
+                <motion.div
+                  key={inc.session_id}
                   id={idx === 0 ? 'spotlight-incident-card-0' : undefined} /* 🛡️ TARGET 2: Highlights the very first card */
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -100,9 +106,17 @@ export default function IncidentsPage() {
                   className={`bg-white/[0.02] border ${isCritical ? 'border-red-500/30 bg-red-500/[0.02]' : 'border-white/10'} rounded-lg p-5 flex flex-col md:flex-row items-center gap-6 backdrop-blur-xl transition-all hover:bg-white/[0.05]`}
                 >
                   {/* Status Indicator & Timer */}
-                  <div className="flex flex-col items-center justify-center w-24 border-r border-white/10 pr-6">
-                    <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-2">T-MINUS</div>
-                    <div className={`${isCritical ? 'text-red-400' : 'text-cyan-400'} font-bold`}>
+                  <div className="relative flex flex-col items-center justify-center w-24 border-r border-white/10 pr-6 overflow-hidden">
+                    {isCritical && (
+                      <motion.div
+                        className="absolute w-32 h-32 rounded-full pointer-events-none"
+                        style={{ background: 'conic-gradient(from 0deg, transparent 75%, rgba(248,113,113,0.12) 100%)' }}
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+                      />
+                    )}
+                    <div className="relative text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-2">T-MINUS</div>
+                    <div className={`relative ${isCritical ? 'text-red-400' : 'text-cyan-400'} font-bold`}>
                       <MissionClock startTime={inc.created_at} />
                     </div>
                   </div>
@@ -110,38 +124,33 @@ export default function IncidentsPage() {
                   {/* Core Info */}
                   <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
-                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">INCIDENT ID</div>
-                      <div className="text-xs font-mono text-white font-bold">{inc.id}</div>
+                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">SESSION ID</div>
+                      <div className="text-xs font-mono text-white font-bold truncate" title={inc.session_id}>{inc.session_id}</div>
                     </div>
                     <div>
-                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">INJURY TYPE</div>
-                      <div className={`text-xs font-mono px-2 py-0.5 rounded border inline-block ${isCritical ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-amber-500/10 border-amber-500/30 text-amber-400'}`}>
-                        {inc.type}
+                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">TRIAGE</div>
+                      <span className={`triage-badge triage-${inc.triage_category} uppercase`}>{inc.triage_category}</span>
+                    </div>
+                    <HoverTooltip tooltip="Photographic Wound Assessment Tool score (0-20) — a severity rating derived from the AI's analysis of the wound image. 0-4 Minor · 4-8 Delayed · 8-12 Urgent · 12-20 Critical.">
+                      <div>
+                        <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">PWAT SCORE</div>
+                        <div className="text-xs font-mono font-bold" style={{ color: pwatColor(inc.pwat_score) }}>{Number(inc.pwat_score).toFixed(1)}</div>
                       </div>
-                    </div>
+                    </HoverTooltip>
                     <div>
-                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">RESPONDER</div>
-                      <div className="text-xs font-mono text-slate-300">{inc.responder}</div>
-                    </div>
-                    <div>
-                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">HARDWARE</div>
-                      <div className="text-xs font-mono text-slate-300">{inc.device}</div>
+                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">DEPTH</div>
+                      <div className="text-xs font-mono text-slate-300">{inc.wound_metrics?.depth_severity ?? '—'}</div>
                     </div>
                   </div>
 
                   {/* Actions */}
                   <div className="flex items-center gap-3 pl-6 border-l border-white/10">
-                    <button className="px-4 py-2 bg-white/5 border border-white/10 text-white text-[10px] font-mono rounded hover:bg-white/10 transition-colors">
-                      RADIO
+                    <button
+                      onClick={() => setActivePatientId(inc.session_id)}
+                      className="px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-mono rounded hover:bg-cyan-500/20 transition-colors"
+                    >
+                      VIEW DETAILS
                     </button>
-                    {canResolve && (
-                      <button
-                        onClick={() => resolve(inc.id)}
-                        className="px-4 py-2 bg-green-500/10 border border-green-500/30 text-green-400 text-[10px] font-mono rounded hover:bg-green-500/20 transition-colors"
-                      >
-                        MARK RESOLVED
-                      </button>
-                    )}
                   </div>
                 </motion.div>
               );

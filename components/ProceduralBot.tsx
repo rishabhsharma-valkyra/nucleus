@@ -1,22 +1,63 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Sphere, Cylinder, Capsule, RoundedBox, Center } from '@react-three/drei';
 import * as THREE from 'three';
 
 interface BotProps {
   isLoading?: boolean;
+  // Data-reactive mood — eyes/core shift from cyan to red when true (e.g.
+  // a live Red-triage case exists), independent of the chat's own loading
+  // state so the bot's "mood" reflects real hospital state, not just typing.
+  alert?: boolean;
+  // Bump this number to fire a one-shot "notice" beat — head snaps to look
+  // at the viewer and eyes flash, for moments like opening the chat.
+  noticeTrigger?: number;
 }
 
-export default function ProceduralBot({ isLoading = false }: BotProps) {
+const MOOD_CYAN = new THREE.Color('#22d3ee');
+const MOOD_RED = new THREE.Color('#f87171');
+
+export default function ProceduralBot({ isLoading = false, alert = false, noticeTrigger = 0 }: BotProps) {
   const botGroupRef = useRef<THREE.Group>(null);
   const headRef = useRef<THREE.Group>(null);
-  
+
   // Material Refs for pulsing
   const eyeLeftMatRef = useRef<THREE.MeshStandardMaterial>(null);
   const eyeRightMatRef = useRef<THREE.MeshStandardMaterial>(null);
+  const coreMatRef = useRef<THREE.MeshStandardMaterial>(null);
   const mouthRef = useRef<THREE.Mesh>(null);
+
+  // Mesh refs (not material) so blinking can squash them on the Y axis.
+  const eyeLeftMeshRef = useRef<THREE.Mesh>(null);
+  const eyeRightMeshRef = useRef<THREE.Mesh>(null);
+
+  // Cursor gaze-tracking — the bot looks toward the real mouse position
+  // instead of a canned sine-wave sweep when idle.
+  const pointerRef = useRef({ x: 0, y: 0 });
+  useEffect(() => {
+    const handleMove = (e: MouseEvent) => {
+      pointerRef.current.x = (e.clientX / window.innerWidth) * 2 - 1;
+      pointerRef.current.y = (e.clientY / window.innerHeight) * 2 - 1;
+    };
+    window.addEventListener('mousemove', handleMove);
+    return () => window.removeEventListener('mousemove', handleMove);
+  }, []);
+
+  // Blinking — randomized interval, ~140ms eyelid-squash each time.
+  const blinkRef = useRef({ next: 2 + Math.random() * 3, active: false, start: 0 });
+
+  // Notice pulse — fires once whenever noticeTrigger changes. `pending` is
+  // consumed on the next animation frame (which has the three.js clock),
+  // since the effect itself runs outside the render loop.
+  const noticeRef = useRef({ seen: noticeTrigger, pending: false, startTime: -10 });
+  useEffect(() => {
+    if (noticeTrigger !== noticeRef.current.seen) {
+      noticeRef.current.seen = noticeTrigger;
+      noticeRef.current.pending = true;
+    }
+  }, [noticeTrigger]);
 
   // Refs for the dynamic rocket exhaust
   const flameLRef = useRef<THREE.Mesh>(null);
@@ -36,20 +77,74 @@ export default function ProceduralBot({ isLoading = false }: BotProps) {
       botGroupRef.current.position.y = Math.sin(time * hoverSpeed) * hoverAmplitude;
     }
 
-    // 2. Pure Autonomous Idle "Look Around"
+    // 2. Gaze — tracks the real cursor when idle instead of a canned sweep.
+    // A notice pulse briefly overrides this to snap toward the viewer.
+    const noticeElapsed = time - noticeRef.current.startTime;
+    if (noticeRef.current.pending) {
+      noticeRef.current.startTime = time;
+      noticeRef.current.pending = false;
+    }
+    const noticing = noticeElapsed < 0.6;
+
     if (headRef.current) {
-      const targetRotY = Math.sin(time * 0.5) * 0.2;
-      const targetRotX = Math.sin(time * 0.7) * 0.05;
-      
-      headRef.current.rotation.y = THREE.MathUtils.lerp(headRef.current.rotation.y, targetRotY, delta * 4);
-      headRef.current.rotation.x = THREE.MathUtils.lerp(headRef.current.rotation.x, targetRotX, delta * 4);
+      let targetRotY: number;
+      let targetRotX: number;
+      let lerpSpeed = 3;
+
+      if (noticing) {
+        // Quick look-at-viewer beat, then gaze resumes naturally.
+        const settle = Math.min(noticeElapsed / 0.25, 1);
+        targetRotY = THREE.MathUtils.lerp(0, pointerRef.current.x * 0.35, settle);
+        targetRotX = THREE.MathUtils.lerp(0, -pointerRef.current.y * 0.15, settle);
+        lerpSpeed = 10;
+      } else if (isLoading) {
+        targetRotY = Math.sin(time * 3) * 0.15;
+        targetRotX = Math.sin(time * 2) * 0.08;
+      } else {
+        targetRotY = THREE.MathUtils.clamp(pointerRef.current.x * 0.35, -0.4, 0.4);
+        targetRotX = THREE.MathUtils.clamp(-pointerRef.current.y * 0.15, -0.2, 0.2);
+      }
+
+      headRef.current.rotation.y = THREE.MathUtils.lerp(headRef.current.rotation.y, targetRotY, delta * lerpSpeed);
+      headRef.current.rotation.x = THREE.MathUtils.lerp(headRef.current.rotation.x, targetRotX, delta * lerpSpeed);
     }
 
-    // 3. Eye Pulse
+    // 3. Eye Pulse + Blink + Mood Color
     if (eyeLeftMatRef.current && eyeRightMatRef.current) {
-      const pulse = isLoading ? Math.abs(Math.sin(time * 5)) * 1.5 + 0.5 : 1.2;
+      const basePulse = isLoading ? Math.abs(Math.sin(time * 5)) * 1.5 + 0.5 : 1.2;
+      const pulse = noticing ? basePulse + (1 - Math.min(noticeElapsed / 0.3, 1)) * 2 : basePulse;
       eyeLeftMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(eyeLeftMatRef.current.emissiveIntensity, pulse, delta * 5);
       eyeRightMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(eyeRightMatRef.current.emissiveIntensity, pulse, delta * 5);
+
+      const moodColor = alert ? MOOD_RED : MOOD_CYAN;
+      eyeLeftMatRef.current.color.lerp(moodColor, delta * 4);
+      eyeLeftMatRef.current.emissive.lerp(moodColor, delta * 4);
+      eyeRightMatRef.current.color.lerp(moodColor, delta * 4);
+      eyeRightMatRef.current.emissive.lerp(moodColor, delta * 4);
+      if (coreMatRef.current) {
+        coreMatRef.current.color.lerp(moodColor, delta * 4);
+        coreMatRef.current.emissive.lerp(moodColor, delta * 4);
+      }
+    }
+
+    // Blink — randomized interval, quick eyelid squash independent of pulse.
+    const blink = blinkRef.current;
+    if (!blink.active && time > blink.next) {
+      blink.active = true;
+      blink.start = time;
+    }
+    if (eyeLeftMeshRef.current && eyeRightMeshRef.current) {
+      if (blink.active) {
+        const t = time - blink.start;
+        const dur = 0.14;
+        const scaleY = t < dur ? Math.abs(Math.cos((t / dur) * Math.PI)) : 1;
+        eyeLeftMeshRef.current.scale.y = Math.max(0.08, scaleY);
+        eyeRightMeshRef.current.scale.y = Math.max(0.08, scaleY);
+        if (t >= dur) {
+          blink.active = false;
+          blink.next = time + 2.5 + Math.random() * 3.5;
+        }
+      }
     }
 
     // 4. Voice / Mouth Animation
@@ -102,12 +197,12 @@ export default function ProceduralBot({ isLoading = false }: BotProps) {
           <group position={[0, 0.05, 0.85]}>
             {/* Eyes */}
             <group position={[-0.28, 0, 0]} rotation={[0, 0, 0.05]}>
-              <RoundedBox args={[0.22, 0.05, 0.05]} radius={0.02} smoothness={4}>
+              <RoundedBox ref={eyeLeftMeshRef as any} args={[0.22, 0.05, 0.05]} radius={0.02} smoothness={4}>
                 <meshStandardMaterial ref={eyeLeftMatRef} color="#22d3ee" emissive="#22d3ee" toneMapped={false} />
               </RoundedBox>
             </group>
             <group position={[0.28, 0, 0]} rotation={[0, 0, -0.05]}>
-              <RoundedBox args={[0.22, 0.05, 0.05]} radius={0.02} smoothness={4}>
+              <RoundedBox ref={eyeRightMeshRef as any} args={[0.22, 0.05, 0.05]} radius={0.02} smoothness={4}>
                 <meshStandardMaterial ref={eyeRightMatRef} color="#22d3ee" emissive="#22d3ee" toneMapped={false} />
               </RoundedBox>
             </group>
@@ -134,7 +229,7 @@ export default function ProceduralBot({ isLoading = false }: BotProps) {
           <Capsule args={[0.5, 0.35, 24, 32]}>{matteAlloy}</Capsule>
           {/* Glowing Core */}
           <Sphere args={[0.32, 24, 24]} position={[0, -0.05, 0.38]} scale={[0.8, 0.6, 0.3]}>
-            <meshStandardMaterial color="#22d3ee" emissive="#22d3ee" emissiveIntensity={0.6} toneMapped={false} />
+            <meshStandardMaterial ref={coreMatRef} color="#22d3ee" emissive="#22d3ee" emissiveIntensity={0.6} toneMapped={false} />
           </Sphere>
 
           {/* Back Anti-Gravity Thrusters */}

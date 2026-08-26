@@ -7,6 +7,7 @@ import { ROLE_LABELS, PERMISSIONS } from '@/lib/rbac';
 import { DEV_ROLE_SWITCH_ENABLED, readDevRoleCookie, clearDevRoleCookie } from '@/lib/devRole';
 import { DEVICES } from '@/config/fleet';
 import { getDeviceAlerts } from '@/lib/deviceAlerts';
+import SidebarBotPresence from '@/components/SidebarBotPresence';
 
 interface NavItem {
   href: string;
@@ -143,6 +144,8 @@ export default function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {canViewOperations && <SidebarBotPresence alert={redCount > 0} />}
 
       <div className="sidebar-footer">
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '0 2px' }}>
