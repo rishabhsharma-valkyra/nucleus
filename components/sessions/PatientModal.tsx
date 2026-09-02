@@ -5,6 +5,7 @@ import { usePatient } from '@/hooks';
 import { pwatColor, depthSeverityColor, formatDate } from '@/lib/utils';
 import { gcsImageUrl as gcsImg, gcsTextUrl as gcsTxt } from '@/lib/api';
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { MetricInfo, METRIC_DESCRIPTIONS as info } from '@/components/ui/MetricInfo';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -69,6 +70,14 @@ export default function PatientModal() {
   }, [activePatientId]);
 
   if (!activePatientId) return null;
+  // Rendered via a portal to document.body — .shell (the dashboard's root
+  // layout wrapper) sets position:relative + z-index:1, which creates its
+  // own stacking context. That traps this modal's own z-index (however
+  // high) below any sibling of .shell with a higher z-index of its own —
+  // like GlobalChatbot's floating avatar/drawer (z-100 to z-120) — since
+  // the comparison happens at the .shell level (z:1), not the modal's.
+  // The portal escapes that ancestor entirely.
+  if (typeof document === 'undefined') return null;
 
   const openImage = (path: string, title: string) => setLightbox({ path, title });
 
@@ -170,7 +179,7 @@ export default function PatientModal() {
     }
   };
 
-  return (
+  return createPortal(
     <>
       <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setActivePatientId(null); }}>
         
@@ -494,6 +503,7 @@ export default function PatientModal() {
           </div>
         </div>
       )}
-    </>
+    </>,
+    document.body
   );
 }

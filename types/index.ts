@@ -98,6 +98,16 @@ export interface Device {
 
 export interface Toast {
   id: string;
-  type: 'success' | 'error';
+  type: 'success' | 'error' | 'alert';
   message: string;
+}
+
+// A client-detected critical case notification (new active Red-triage
+// session) — kept in a short-lived list so the alert bell has something to
+// show beyond the auto-dismissing toast.
+export interface CriticalAlert {
+  id: string;
+  sessionId: string;
+  message: string;
+  time: string;
 }

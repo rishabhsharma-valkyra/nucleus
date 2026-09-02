@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionProvider } from 'next-auth/react';
 import { useState } from 'react';
 import ToastContainer from '@/components/ui/ToastContainer';
+import CriticalAlertWatcher from '@/components/CriticalAlertWatcher';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -13,6 +14,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         {children}
         <ToastContainer />
+        <CriticalAlertWatcher />
       </QueryClientProvider>
     </SessionProvider>
   );

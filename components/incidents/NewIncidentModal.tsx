@@ -6,6 +6,7 @@ import { RESPONDERS, DEVICES, INCIDENT_TYPES } from '@/config/fleet';
 import { useSession } from 'next-auth/react';
 import { generateIncidentId } from '@/lib/utils';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { usePermission } from '@/hooks';
 import { PERMISSIONS } from '@/lib/rbac';
 import { getDeviceForResponder } from '@/lib/deviceAssignments';
@@ -35,6 +36,10 @@ export default function NewIncidentModal() {
 
   if (!open) return null;
   if (!canCreateIncident) return null; // guarded even if opened programmatically
+  // Portal to document.body for the same reason as PatientModal — .shell
+  // sets its own low z-index stacking context, which would otherwise trap
+  // this modal below GlobalChatbot's floating avatar/drawer.
+  if (typeof document === 'undefined') return null;
 
   const onClose = () => { setOpen(false); reset(); };
 
@@ -52,7 +57,7 @@ export default function NewIncidentModal() {
     reset();
   };
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
         <div className="modal-header">
@@ -113,6 +118,7 @@ export default function NewIncidentModal() {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

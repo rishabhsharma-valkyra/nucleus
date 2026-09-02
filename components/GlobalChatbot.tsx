@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, FormEvent } from 'react';
+import { useState, useRef, useEffect, useMemo, FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useChat } from '@ai-sdk/react';
 import { Canvas } from '@react-three/fiber';
@@ -10,8 +10,19 @@ import { useRole, useSummary, useAllSessions } from '@/hooks';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import ProceduralBot from './ProceduralBot';
 
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+// react-markdown's default urlTransform sanitizes hrefs against a protocol
+// allowlist (http/https/mailto/etc.) and silently returns '' for anything
+// else — including our made-up `session:<uuid>` scheme used to mark a
+// session-ID link for the custom `a` renderer below. Without this override,
+// the href never reaches that renderer intact, so the link quietly
+// degrades to plain, non-clickable text.
+function chatUrlTransform(url: string): string {
+  if (url.startsWith('session:')) return url;
+  return defaultUrlTransform(url);
+}
 
 // Builds the floating thought-bubble pool from real live data instead of a
 // fixed script, so the nudges reflect what's actually happening right now.
@@ -48,6 +59,15 @@ function linkifySessionIds(text: string): string {
   return text.replace(UUID_RE, (match) => `[${match.slice(0, 8)}…](session:${match})`);
 }
 
+// Groq's model sometimes substitutes typographic hyphen variants (most
+// often U+2011 non-breaking hyphen) for a plain ASCII hyphen inside UUIDs —
+// harmless-looking in prose, but it silently breaks the UUID regex used for
+// linkifying session IDs and detecting them for follow-up chips. Normalize
+// before anything else touches the text.
+function normalizeHyphens(text: string): string {
+  return text.replace(/[‐‑‒–−]/g, '-');
+}
+
 function getMessageText(m: any): string {
   const textElements: string[] = [];
   if (m.content) textElements.push(m.content);
@@ -56,7 +76,86 @@ function getMessageText(m: any): string {
       if (part.type === 'text' && part.text && !m.content) textElements.push(part.text);
     });
   }
-  return textElements.join('\n');
+  return normalizeHyphens(textElements.join('\n'));
+}
+
+// ── Persistent chat history (per signed-in user, this browser only) ──────
+// Multiple threads, not one overwritten conversation — "New Chat" archives
+// the current thread instead of discarding it, and a history panel lets you
+// come back to anything from the last THREAD_RETENTION_DAYS days.
+interface ChatThread {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+  title: string;
+  messages: any[];
+}
+
+const THREAD_RETENTION_DAYS = 10;
+const THREAD_LIMIT = 30;
+const threadsKey = (email: string) => `valkyra-chat-threads:${email}`;
+
+function pruneThreads(threads: ChatThread[]): ChatThread[] {
+  const cutoff = Date.now() - THREAD_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  return threads.filter((t) => t.updatedAt >= cutoff).slice(-THREAD_LIMIT);
+}
+
+function loadThreads(email: string): ChatThread[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(threadsKey(email));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? pruneThreads(parsed) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveThreads(email: string, threads: ChatThread[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(threadsKey(email), JSON.stringify(pruneThreads(threads)));
+  } catch {
+    // Storage full/unavailable — history just won't persist this time.
+  }
+}
+
+function deriveThreadTitle(messages: any[]): string {
+  const firstUser = messages.find((m: any) => m.role === 'user');
+  if (!firstUser) return 'New conversation';
+  const text = getMessageText(firstUser).trim();
+  if (!text) return 'New conversation';
+  return text.length > 44 ? text.slice(0, 44) + '…' : text;
+}
+
+function relativeDayLabel(ts: number): string {
+  const diffDays = Math.floor((Date.now() - ts) / (24 * 60 * 60 * 1000));
+  if (diffDays <= 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return `${diffDays} days ago`;
+}
+
+function greetingMessage(firstName: string) {
+  return {
+    id: '1',
+    role: 'assistant',
+    parts: [{ type: 'text', text: `Valkyra AI initialized. Connected to live hospital telemetry. How can I assist, ${firstName}?` }],
+  };
+}
+
+// ── Voice output (text-to-speech) ─────────────────────────────────────────
+// Strips markdown syntax the model uses (tables, bold, code, links) so the
+// spoken version doesn't read out literal asterisks and pipe characters.
+function stripMarkdownForSpeech(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, ' code block ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*_#>~]/g, '')
+    .replace(/\|/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // Lightweight heuristic follow-ups keyed off what the reply actually said,
@@ -205,39 +304,134 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
   const sessions = sessionsData?.sessions ?? [];
   const redCount = summary?.triage_distribution?.Red?.count ?? 0;
   const setActivePatientId = useNucleusStore((s) => s.setActivePatientId);
+  const voiceReplyEnabled = useNucleusStore((s) => s.voiceReplyEnabled);
+  const setVoiceReplyEnabled = useNucleusStore((s) => s.setVoiceReplyEnabled);
 
   const [tooltipText, setTooltipText] = useState('Systems optimal. Awaiting your query.');
   const [showTooltip, setShowTooltip] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   const [input, setInput] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  
+
   const [isRecording, setIsRecording] = useState(false);
-  
-  const lastSpeechTimeRef = useRef(0); 
-  
+
+  const lastSpeechTimeRef = useRef(0);
+
   const recognitionRef = useRef<any>(null);
-  const baseInputRef = useRef<string>(''); 
+  const baseInputRef = useRef<string>('');
 
   const rawName = session.user.name || 'User';
   const firstName = rawName.split(' ')[0];
   const roleName = role === 'admin' ? 'System Administrator' : 'Medical Officer';
+  const userEmail = session.user.email || 'anonymous';
+
+  const speak = (text: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(stripMarkdownForSpeech(text));
+    utter.rate = 1.02;
+    utter.pitch = 0.95;
+    utter.onstart = () => setIsSpeaking(true);
+    utter.onend = () => setIsSpeaking(false);
+    utter.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utter);
+  };
+
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Loaded once — everything after this reads/writes through `threads` state
+  // (kept in sync with localStorage on every settle), not this snapshot.
+  const [threads, setThreads] = useState<ChatThread[]>(() => loadThreads(userEmail));
+
+  // Resume the most recently updated thread if one exists within the
+  // retention window; otherwise start a fresh one. Only computed once per
+  // user — useChat treats `messages` as an initial value, not a reactive
+  // prop, so recomputing it on every render would be wasted work (and risks
+  // a subtle re-init if that assumption ever changes).
+  const [activeThreadId, setActiveThreadId] = useState<string>(() => {
+    const existing = loadThreads(userEmail);
+    if (existing.length === 0) return `t-${Date.now()}`;
+    return existing.reduce((latest, t) => (t.updatedAt > latest.updatedAt ? t : latest)).id;
+  });
+
+  const initialMessages = useMemo(() => {
+    const existing = threads.find((t) => t.id === activeThreadId);
+    return existing?.messages ?? [greetingMessage(firstName)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userEmail]);
 
   const chatConfig: any = {
     body: { userName: firstName, userRole: roleName },
-    messages: [
-      { 
-        id: '1', 
-        role: 'assistant', 
-        parts: [{ type: 'text', text: `Valkyra AI initialized. Connected to live hospital telemetry. How can I assist, ${firstName}?` }] 
+    messages: initialMessages,
+    onFinish: ({ message, isError, isAbort }: any) => {
+      if (isError || isAbort) return;
+      // Read the live store value rather than closing over the render's
+      // `voiceReplyEnabled` — onFinish is captured once by the underlying
+      // Chat instance, so a stale closure would never see later toggles.
+      if (useNucleusStore.getState().voiceReplyEnabled) {
+        const text = getMessageText(message);
+        if (text) speak(text);
       }
-    ]
+    },
   };
 
-  const { messages, sendMessage, status: chatStatus, error } = useChat(chatConfig);
+  const { messages, sendMessage, setMessages, status: chatStatus, error } = useChat(chatConfig);
   const isLoading = chatStatus === 'submitted' || chatStatus === 'streaming';
+
+  // Persist once a turn settles (avoids writing to localStorage on every
+  // streamed token). A thread with only the greeting never gets saved, so
+  // opening "New Chat" and never using it doesn't clutter the history list.
+  useEffect(() => {
+    if ((chatStatus === 'ready' || chatStatus === 'error') && messages.length > 1) {
+      setThreads((prev) => {
+        const now = Date.now();
+        const idx = prev.findIndex((t) => t.id === activeThreadId);
+        const title = deriveThreadTitle(messages);
+        const next = idx >= 0
+          ? prev.map((t, i) => (i === idx ? { ...t, messages, updatedAt: now, title } : t))
+          : [...prev, { id: activeThreadId, createdAt: now, updatedAt: now, title, messages }];
+        saveThreads(userEmail, next);
+        return next;
+      });
+    }
+  }, [chatStatus, messages, activeThreadId, userEmail]);
+
+  // Stop any in-progress speech the moment the panel closes.
+  useEffect(() => {
+    if (!isOpen && typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
+  }, [isOpen]);
+
+  const handleNewChat = () => {
+    window.speechSynthesis?.cancel();
+    setIsSpeaking(false);
+    setActiveThreadId(`t-${Date.now()}`);
+    setMessages([greetingMessage(firstName)] as any);
+    setHistoryOpen(false);
+  };
+
+  const handleSelectThread = (t: ChatThread) => {
+    window.speechSynthesis?.cancel();
+    setIsSpeaking(false);
+    setActiveThreadId(t.id);
+    setMessages(t.messages as any);
+    setHistoryOpen(false);
+  };
+
+  const handleDeleteThread = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setThreads((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      saveThreads(userEmail, next);
+      return next;
+    });
+    if (id === activeThreadId) handleNewChat();
+  };
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -367,13 +561,18 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
     ul: ({ node, ...props }: any) => <ul className="list-disc list-outside ml-4 mb-3 space-y-1 marker:text-cyan-500" {...props} />,
     ol: ({ node, ...props }: any) => <ol className="list-decimal list-outside ml-4 mb-3 space-y-1 marker:text-cyan-500" {...props} />,
     li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
+    // table-fixed + w-full forces columns to share the bubble's actual width
+    // and wrap their content, rather than demanding their natural
+    // (max-content) width — a narrow ~320px drawer can't fit a full UUID
+    // plus two more columns on one line no matter how it's scrolled, so
+    // wrapping is what keeps the table fully visible instead of clipped.
     table: ({ node, ...props }: any) => (
-      <div className="overflow-x-auto my-4 border border-cyan-900/30 rounded-lg">
-        <table className="w-full text-left border-collapse" {...props} />
+      <div className="max-w-full my-4 border border-cyan-900/30 rounded-lg overflow-hidden">
+        <table className="chat-table w-full text-left border-collapse table-fixed" {...props} />
       </div>
     ),
-    th: ({ node, ...props }: any) => <th className="bg-cyan-950/40 border-b border-cyan-800/50 p-2.5 font-mono text-cyan-400 text-[10px] uppercase tracking-wider" {...props} />,
-    td: ({ node, ...props }: any) => <td className="border-b border-cyan-900/20 p-2.5 text-slate-200 text-[12px] last:border-b-0" {...props} />,
+    th: ({ node, ...props }: any) => <th className="bg-cyan-950/40 border-b border-cyan-800/50 p-2 font-mono text-cyan-400 text-[9px] uppercase tracking-wider break-words" {...props} />,
+    td: ({ node, ...props }: any) => <td className="border-b border-cyan-900/20 p-2 text-slate-200 text-[11px] last:border-b-0 break-words" {...props} />,
     a: ({ node, href, children, ...props }: any) => {
       if (typeof href === 'string' && href.startsWith('session:')) {
         const sessionId = href.slice('session:'.length);
@@ -381,10 +580,15 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
           <button
             type="button"
             onClick={() => setActivePatientId(sessionId)}
-            className="inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 font-mono text-[11px] hover:bg-cyan-500/20 hover:border-cyan-400/50 transition-all align-middle"
+            title={sessionId}
+            className="inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 font-mono text-[11px] hover:bg-cyan-500/20 hover:border-cyan-400/50 transition-all align-middle max-w-full min-w-0"
           >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-            {children}
+            <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+            {/* min-w-0 is load-bearing here — without it, a flex child (this
+                span) refuses to shrink below its text's natural width, so
+                truncate's ellipsis never kicks in and the chip overflows
+                its table cell into the next column instead of clipping. */}
+            <span className="truncate min-w-0">{children}</span>
           </button>
         );
       }
@@ -407,7 +611,7 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
   const renderMessageContent = (m: any) => {
     const text = linkifySessionIds(getMessageText(m));
     return (
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents} urlTransform={chatUrlTransform}>
         {text}
       </ReactMarkdown>
     );
@@ -420,6 +624,10 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
         .cyber-scrollbar::-webkit-scrollbar-track { background: rgba(2,6,23,0.5); }
         .cyber-scrollbar::-webkit-scrollbar-thumb { background: rgba(34,211,238,0.3); border-radius: 4px; }
         .cyber-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(34,211,238,0.6); }
+        /* table-fixed splits columns evenly by default, which starves an ID
+           column (usually first) that needs more room than a short Triage/
+           status column next to it — give it a head start. */
+        .chat-table th:first-child, .chat-table td:first-child { width: 42%; }
       `}} />
 
       {/* 🛡️ THE FIX: Added id="spotlight-bot" to this wrapper so the Tour Engine can track it */}
@@ -518,9 +726,101 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                     </div>
                   </div>
                 </div>
-                <button onClick={() => setIsOpen(false)} className="text-slate-500 hover:text-cyan-400 transition-colors p-2 hover:bg-cyan-950/30 rounded-md">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+                <div className="flex items-center gap-0.5">
+                  {/* Conversation management — History and New Chat grouped first, since they're the two ways to navigate between chats. */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setHistoryOpen((o) => !o)}
+                      title="View past conversations"
+                      className={`p-2 rounded-md transition-colors ${historyOpen ? 'text-cyan-400 bg-cyan-950/30' : 'text-slate-500 hover:text-cyan-400 hover:bg-cyan-950/30'}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </button>
+                    <AnimatePresence>
+                      {historyOpen && (
+                        <>
+                          <div className="fixed inset-0 z-[125]" onClick={() => setHistoryOpen(false)} />
+                          <motion.div
+                            initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                            transition={{ duration: 0.15 }}
+                            className="absolute right-0 top-full mt-2 w-72 z-[130] rounded-lg overflow-hidden"
+                            style={{ background: 'rgba(6,12,24,0.98)', border: '1px solid rgba(34,211,238,0.2)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}
+                          >
+                            <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                              <span className="font-mono text-cyan-400" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 2 }}>Past Conversations</span>
+                            </div>
+                            <div style={{ maxHeight: 320, overflowY: 'auto' }} className="cyber-scrollbar">
+                              {threads.filter((t) => t.messages.length > 1).length === 0 ? (
+                                <div style={{ padding: '20px 16px', textAlign: 'center' }} className="font-mono text-slate-500">
+                                  <span style={{ fontSize: 11 }}>No past conversations in the last {THREAD_RETENTION_DAYS} days.</span>
+                                </div>
+                              ) : (
+                                [...threads]
+                                  .filter((t) => t.messages.length > 1)
+                                  .sort((a, b) => b.updatedAt - a.updatedAt)
+                                  .map((t) => (
+                                    <button
+                                      key={t.id}
+                                      onClick={() => handleSelectThread(t)}
+                                      className={`w-full text-left transition-colors flex items-start justify-between gap-2 group ${t.id === activeThreadId ? 'bg-cyan-950/20' : 'hover:bg-cyan-950/10'}`}
+                                      style={{ padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                                    >
+                                      <div style={{ minWidth: 0 }}>
+                                        <div className="text-slate-200 font-mono truncate" style={{ fontSize: 11 }}>{t.title}</div>
+                                        <div className="text-slate-500 font-mono" style={{ fontSize: 9, marginTop: 3 }}>{relativeDayLabel(t.updatedAt)}</div>
+                                      </div>
+                                      <span
+                                        onClick={(e) => handleDeleteThread(t.id, e)}
+                                        className="text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                                        style={{ padding: 4 }}
+                                        title="Delete this conversation"
+                                      >
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                      </span>
+                                    </button>
+                                  ))
+                              )}
+                            </div>
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  <button onClick={handleNewChat} title="Start a new chat" className="text-slate-500 hover:text-cyan-400 transition-colors p-2 hover:bg-cyan-950/30 rounded-md">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                  </button>
+
+                  {/* Output preference, visually separate from conversation navigation. */}
+                  <button
+                    onClick={() => {
+                      if (isSpeaking) window.speechSynthesis?.cancel();
+                      setVoiceReplyEnabled(!voiceReplyEnabled);
+                      setIsSpeaking(false);
+                    }}
+                    title={voiceReplyEnabled ? 'Voice replies on — click to mute' : 'Voice replies off — click to enable'}
+                    className={`p-2 rounded-md transition-colors ${voiceReplyEnabled ? 'text-cyan-400 bg-cyan-950/30' : 'text-slate-500 hover:text-cyan-400 hover:bg-cyan-950/30'}`}
+                  >
+                    {isSpeaking ? (
+                      <motion.svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 0.6, repeat: Infinity }}>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5L6 9H2v6h4l5 4V5z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" />
+                      </motion.svg>
+                    ) : voiceReplyEnabled ? (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5L6 9H2v6h4l5 4V5z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.54 8.46a5 5 0 010 7.07" /></svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5L6 9H2v6h4l5 4V5z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M23 9l-6 6M17 9l6 6" /></svg>
+                    )}
+                  </button>
+
+                  {/* Dismiss action, separated with a divider since it's a different category from the icons above. */}
+                  <div className="ml-1 pl-1" style={{ borderLeft: '1px solid rgba(255,255,255,0.08)' }}>
+                    <button onClick={() => setIsOpen(false)} title="Close" className="text-slate-500 hover:text-cyan-400 transition-colors p-2 hover:bg-cyan-950/30 rounded-md">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6 flex flex-col gap-8 cyber-scrollbar">
@@ -535,7 +835,7 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                       key={m.id}
                       initial={{ opacity: 0, y: 15, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      className={`flex flex-col max-w-[88%] ${isUser ? 'self-end items-end' : 'self-start items-start'}`}
+                      className={`flex flex-col max-w-[88%] min-w-0 ${isUser ? 'self-end items-end' : 'self-start items-start'}`}
                     >
                       <span className="font-mono text-[10px] text-slate-400 mb-1.5 tracking-wider uppercase px-1">
                         {isUser ? firstName : 'Valkyra System'}
@@ -543,7 +843,7 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
 
                       <div
                         className={`
-                          px-4 py-3 text-[13px] shadow-lg
+                          px-4 py-3 text-[13px] shadow-lg min-w-0 max-w-full overflow-hidden
                           ${isUser
                             ? 'bg-slate-800 text-slate-100 rounded-2xl rounded-tr-sm border-r-2 border-slate-600'
                             : 'bg-cyan-950/20 text-cyan-50 rounded-2xl rounded-tl-sm border-l-2 border-cyan-500'}
@@ -607,7 +907,7 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                   <motion.div 
                     initial={{ opacity: 0, y: 15, scale: 0.95 }} 
                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                    className="flex flex-col max-w-[88%] self-start items-start"
+                    className="flex flex-col max-w-[88%] min-w-0 self-start items-start"
                   >
                     <span className="font-mono text-[10px] text-slate-400 mb-1.5 tracking-wider uppercase px-1">
                       Valkyra System
