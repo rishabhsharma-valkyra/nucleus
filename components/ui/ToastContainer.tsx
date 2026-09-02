@@ -8,7 +8,7 @@ export default function ToastContainer() {
 
   useEffect(() => {
     toasts.forEach((t) => {
-      const timer = setTimeout(() => removeToast(t.id), 4000);
+      const timer = setTimeout(() => removeToast(t.id), t.type === 'alert' ? 8000 : 4000);
       return () => clearTimeout(timer);
     });
   }, [toasts, removeToast]);
@@ -19,7 +19,7 @@ export default function ToastContainer() {
     <div className="toast-container">
       {toasts.map((t) => (
         <div key={t.id} className={`toast ${t.type}`} onClick={() => removeToast(t.id)}>
-          <span>{t.type === 'success' ? '✓' : '✕'}</span>
+          <span>{t.type === 'success' ? '✓' : t.type === 'alert' ? '⚠' : '✕'}</span>
           <span>{t.message}</span>
         </div>
       ))}

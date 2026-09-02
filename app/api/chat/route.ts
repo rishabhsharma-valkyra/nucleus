@@ -1,10 +1,31 @@
 import { streamText, createUIMessageStreamResponse, toUIMessageStream } from 'ai';
 import { createGroq } from '@ai-sdk/groq';
+import { getToken } from 'next-auth/jwt';
+import { NextRequest } from 'next/server';
 
 export const maxDuration = 30;
 
 const API_BASE_URL = process.env.HOSPITAL_API_URL || 'http://localhost:8000';
 const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
+
+// ── Rate limiting ──────────────────────────────────────────────────────
+// In-memory, per-instance sliding window. This stops a single runaway
+// client (buggy tab stuck retrying, or someone scripting the endpoint)
+// from hammering the paid Groq API, but it does NOT coordinate across
+// multiple serverless instances — a determined abuser spread across
+// instances could still exceed this. A hard guarantee needs a shared
+// store (Upstash/Vercel KV); this is a lightweight first line of defense.
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 15;
+const requestLog = new Map<string, number[]>();
+
+function isRateLimited(key: string): boolean {
+  const now = Date.now();
+  const timestamps = (requestLog.get(key) ?? []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  timestamps.push(now);
+  requestLog.set(key, timestamps);
+  return timestamps.length > RATE_LIMIT_MAX;
+}
 
 async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 4000) {
   console.log(`[HTTP] Fetching: ${url}`);
@@ -28,10 +49,20 @@ async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 4000
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   console.log('\n======================================================');
   console.log('🚀 [API/CHAT] NEW DIRECT-INJECT REQUEST');
   console.log('======================================================');
+
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  const rateLimitKey = (token?.email as string | undefined) ?? 'anonymous';
+  if (isRateLimited(rateLimitKey)) {
+    console.warn(`[RATE LIMIT] ${rateLimitKey} exceeded ${RATE_LIMIT_MAX} requests/min`);
+    return new Response(
+      JSON.stringify({ error: 'Too many messages — please wait a moment before trying again.' }),
+      { status: 429, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
 
   // Parse body safely
   let body;

@@ -1,7 +1,7 @@
 'use client';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Session, Toast, TriageCategory } from '@/types';
+import { Session, Toast, TriageCategory, CriticalAlert } from '@/types';
 import { DeviceAssignments, getDefaultAssignments } from '@/lib/deviceAssignments';
 
 interface NucleusStore {
@@ -38,6 +38,19 @@ interface NucleusStore {
   deviceAssignments: DeviceAssignments;
   assignDevice: (deviceId: string, responderId: string) => void;
   unassignDevice: (deviceId: string) => void;
+
+  // Critical-case alerting (session-only list; preferences persisted)
+  criticalAlerts: CriticalAlert[];
+  addCriticalAlert: (a: CriticalAlert) => void;
+  clearCriticalAlerts: () => void;
+  alertSoundEnabled: boolean;
+  setAlertSoundEnabled: (v: boolean) => void;
+  browserNotifyEnabled: boolean;
+  setBrowserNotifyEnabled: (v: boolean) => void;
+
+  // Valkyra AI chat preferences (persisted)
+  voiceReplyEnabled: boolean;
+  setVoiceReplyEnabled: (v: boolean) => void;
 }
 
 export const useNucleusStore = create<NucleusStore>()(
@@ -82,6 +95,18 @@ export const useNucleusStore = create<NucleusStore>()(
         }),
       unassignDevice: (deviceId) =>
         set((state) => ({ deviceAssignments: { ...state.deviceAssignments, [deviceId]: null } })),
+
+      criticalAlerts: [],
+      addCriticalAlert: (a) =>
+        set((state) => ({ criticalAlerts: [...state.criticalAlerts, a].slice(-50) })),
+      clearCriticalAlerts: () => set({ criticalAlerts: [] }),
+      alertSoundEnabled: true,
+      setAlertSoundEnabled: (v) => set({ alertSoundEnabled: v }),
+      browserNotifyEnabled: false,
+      setBrowserNotifyEnabled: (v) => set({ browserNotifyEnabled: v }),
+
+      voiceReplyEnabled: false,
+      setVoiceReplyEnabled: (v) => set({ voiceReplyEnabled: v }),
     }),
     {
       name: 'nucleus-store',
@@ -90,6 +115,9 @@ export const useNucleusStore = create<NucleusStore>()(
         sessionsPerPage: state.sessionsPerPage,
         triageFilter: state.triageFilter,
         deviceAssignments: state.deviceAssignments,
+        alertSoundEnabled: state.alertSoundEnabled,
+        browserNotifyEnabled: state.browserNotifyEnabled,
+        voiceReplyEnabled: state.voiceReplyEnabled,
       }),
     }
   )

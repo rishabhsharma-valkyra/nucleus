@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { usePermission } from '@/hooks';
 import { PERMISSIONS } from '@/lib/rbac';
+import AlertBell from '@/components/ui/AlertBell';
 
 const TITLES: Record<string, string> = {
   '/overview':       'Command Overview',
@@ -74,6 +75,7 @@ export default function Topbar() {
           <div className="pulse-dot" />
           LIVE
         </div>
+        <AlertBell />
         <button
           className="btn flex items-center gap-2"
           onClick={handleRefresh}

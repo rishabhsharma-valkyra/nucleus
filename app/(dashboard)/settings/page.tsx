@@ -2,7 +2,7 @@
 import { useSession, signOut } from 'next-auth/react';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { checkHealth } from '@/lib/api';
 import { usePermission, useRole } from '@/hooks';
@@ -13,14 +13,50 @@ const sectionReveal: Variants = {
   show: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.08, duration: 0.35, ease: 'easeOut' } }),
 };
 
+const Switch = ({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) => (
+  <button
+    type="button"
+    onClick={() => onChange(!checked)}
+    style={{
+      width: 38, height: 20, borderRadius: 10, padding: 2, display: 'flex', flexShrink: 0,
+      background: checked ? 'rgba(34,211,238,0.35)' : 'rgba(255,255,255,0.08)',
+      border: `1px solid ${checked ? 'rgba(34,211,238,0.6)' : 'var(--border)'}`,
+      cursor: 'pointer', transition: 'background 0.2s, border-color 0.2s',
+    }}
+  >
+    <motion.div
+      animate={{ x: checked ? 18 : 0 }}
+      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+      style={{ width: 14, height: 14, borderRadius: '50%', background: checked ? 'var(--cyan)' : 'var(--text3)' }}
+    />
+  </button>
+);
+
 export default function SettingsPage() {
   const { data: session } = useSession();
-  const { refreshInterval, setRefreshInterval, sessionsPerPage, setSessionsPerPage } = useNucleusStore();
+  const {
+    refreshInterval, setRefreshInterval, sessionsPerPage, setSessionsPerPage,
+    alertSoundEnabled, setAlertSoundEnabled,
+    browserNotifyEnabled, setBrowserNotifyEnabled,
+    voiceReplyEnabled, setVoiceReplyEnabled,
+  } = useNucleusStore();
   const qc = useQueryClient();
   const [healthStatus, setHealthStatus] = useState<null | 'ok' | 'error'>('ok');
   const [testing, setTesting] = useState(false);
   const canManageSettings = usePermission(PERMISSIONS.SETTINGS_MANAGE);
   const role = useRole();
+
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  useEffect(() => {
+    setNotifPermission(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
+  }, []);
+
+  const requestNotifications = async () => {
+    if (typeof Notification === 'undefined') return;
+    const perm = await Notification.requestPermission();
+    setNotifPermission(perm);
+    setBrowserNotifyEnabled(perm === 'granted');
+  };
 
   const testConnection = async () => {
     setTesting(true);
@@ -103,7 +139,27 @@ export default function SettingsPage() {
         </Row>
       </Section>
 
-      <Section title="Account" i={2}>
+      <Section title="Alerts & Voice" i={2}>
+        <Row label="Alert Sound" sub="Play a chime when a new Red-triage case appears">
+          <Switch checked={alertSoundEnabled} onChange={setAlertSoundEnabled} />
+        </Row>
+        <Row label="Browser Notifications" sub="OS-level notification for new Red-triage cases, even in another tab">
+          {notifPermission === 'unsupported' ? (
+            <span style={{ fontSize:11, color:'var(--text3)', fontFamily:'var(--mono)' }}>Not supported</span>
+          ) : notifPermission === 'denied' ? (
+            <span style={{ fontSize:11, color:'var(--red)', fontFamily:'var(--mono)' }}>Blocked in browser</span>
+          ) : notifPermission === 'granted' ? (
+            <Switch checked={browserNotifyEnabled} onChange={setBrowserNotifyEnabled} />
+          ) : (
+            <button className="btn" style={{ fontSize:11, padding:'4px 12px' }} onClick={requestNotifications}>Enable</button>
+          )}
+        </Row>
+        <Row label="Valkyra AI Voice Replies" sub="Speak the assistant's replies aloud (text-to-speech)">
+          <Switch checked={voiceReplyEnabled} onChange={setVoiceReplyEnabled} />
+        </Row>
+      </Section>
+
+      <Section title="Account" i={3}>
         <Row label={session?.user?.name ?? 'Signed In'} sub={session?.user?.email ?? ''}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             {role && (
@@ -118,7 +174,7 @@ export default function SettingsPage() {
         </Row>
       </Section>
 
-      <Section title="System Info" i={3}>
+      <Section title="System Info" i={4}>
         {[
           ['Backend',   'GCP Cloud Run'],
           ['Dataset',   'wound_ai.sessions'],
@@ -132,7 +188,7 @@ export default function SettingsPage() {
       </Section>
 
       {canManageSettings ? (
-        <Section title="Danger Zone" i={4}>
+        <Section title="Danger Zone" i={5}>
           <Row label="Clear Query Cache" sub="Forces a fresh fetch of all data">
             <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="btn btn-danger" style={{ fontSize:11, padding:'5px 14px' }} onClick={() => qc.clear()}>
               Clear Cache
@@ -145,7 +201,7 @@ export default function SettingsPage() {
           </Row>
         </Section>
       ) : (
-        <Section title="Danger Zone" i={4}>
+        <Section title="Danger Zone" i={5}>
           <div style={{ fontSize:11, color:'var(--text3)', fontFamily:'var(--mono)', padding:'8px 0' }}>
             Restricted to Admins.
           </div>

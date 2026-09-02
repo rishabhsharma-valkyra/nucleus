@@ -514,7 +514,9 @@ body {
 .toast { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 10px; font-size: 12px; animation: toast-in 0.3s ease; min-width: 280px; max-width: 420px; }
 .toast.success { background: rgba(6,12,24,0.95); border: 1px solid rgba(74,222,128,0.3); color: var(--green); }
 .toast.error   { background: rgba(6,12,24,0.95); border: 1px solid rgba(248,113,113,0.3); color: var(--red); }
+.toast.alert   { background: rgba(6,12,24,0.95); border: 1px solid rgba(248,113,113,0.5); color: var(--red); font-weight: 600; animation: toast-in 0.3s ease, alert-pulse 1.5s ease-in-out infinite; }
 @keyframes toast-in { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes alert-pulse { 0%, 100% { box-shadow: 0 0 0 rgba(248,113,113,0); } 50% { box-shadow: 0 0 20px rgba(248,113,113,0.35); } }
 
 /* ── SIGN-IN PAGE ── */
 .signin-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
