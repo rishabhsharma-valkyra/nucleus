@@ -433,6 +433,32 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
     if (id === activeThreadId) handleNewChat();
   };
 
+  // ── Edit & resend a prior prompt ──────────────────────────────────────
+  // sendMessage's `messageId` option (built into the SDK) truncates history
+  // after that message, replaces its text in place, and re-triggers the
+  // request — exactly "edit and resend" in one call, no manual splicing.
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+
+  const startEdit = (m: any) => {
+    if (isLoading) return;
+    setEditingMessageId(m.id);
+    setEditDraft(getMessageText(m));
+  };
+
+  const cancelEdit = () => {
+    setEditingMessageId(null);
+    setEditDraft('');
+  };
+
+  const saveEdit = (messageId: string) => {
+    const text = editDraft.trim();
+    if (!text) return;
+    setEditingMessageId(null);
+    setEditDraft('');
+    sendMessage({ text, messageId });
+  };
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -830,34 +856,75 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                   const isLastMessage = i === messages.length - 1;
                   const isStreamingThis = !isUser && isLastMessage && chatStatus === 'streaming';
                   const showFollowUps = !isUser && isLastMessage && chatStatus === 'ready' && messages.length > 1;
+                  const isEditingThis = editingMessageId === m.id;
                   return (
                     <motion.div
                       key={m.id}
                       initial={{ opacity: 0, y: 15, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      className={`flex flex-col max-w-[88%] min-w-0 ${isUser ? 'self-end items-end' : 'self-start items-start'}`}
+                      className={`group flex flex-col max-w-[88%] min-w-0 ${isEditingThis ? 'w-full' : ''} ${isUser ? 'self-end items-end' : 'self-start items-start'}`}
                     >
-                      <span className="font-mono text-[10px] text-slate-400 mb-1.5 tracking-wider uppercase px-1">
-                        {isUser ? firstName : 'Valkyra System'}
-                      </span>
-
-                      <div
-                        className={`
-                          px-4 py-3 text-[13px] shadow-lg min-w-0 max-w-full overflow-hidden
-                          ${isUser
-                            ? 'bg-slate-800 text-slate-100 rounded-2xl rounded-tr-sm border-r-2 border-slate-600'
-                            : 'bg-cyan-950/20 text-cyan-50 rounded-2xl rounded-tl-sm border-l-2 border-cyan-500'}
-                        `}
-                      >
-                        {renderMessageContent(m)}
-                        {isStreamingThis && (
-                          <motion.span
-                            className="inline-block w-[7px] h-[13px] bg-cyan-400 ml-0.5 align-middle"
-                            animate={{ opacity: [1, 1, 0, 0] }}
-                            transition={{ duration: 0.9, repeat: Infinity, times: [0, 0.5, 0.5, 1] }}
-                          />
+                      <div className={`flex items-center gap-1.5 mb-1.5 ${isUser ? 'flex-row-reverse' : ''}`}>
+                        <span className="font-mono text-[10px] text-slate-400 tracking-wider uppercase px-1">
+                          {isUser ? firstName : 'Valkyra System'}
+                        </span>
+                        {isUser && !isEditingThis && (
+                          <button
+                            onClick={() => startEdit(m)}
+                            disabled={isLoading}
+                            title="Edit and resend"
+                            className="opacity-0 group-hover:opacity-100 disabled:opacity-0 text-slate-500 hover:text-cyan-400 transition-all p-0.5"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                          </button>
                         )}
                       </div>
+
+                      {isEditingThis ? (
+                        <div className="w-full flex flex-col gap-2">
+                          <textarea
+                            value={editDraft}
+                            onChange={(e) => setEditDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(m.id); }
+                              if (e.key === 'Escape') cancelEdit();
+                            }}
+                            autoFocus
+                            rows={3}
+                            className="w-full bg-slate-800/80 text-slate-100 rounded-xl rounded-tr-sm border border-cyan-500/40 focus:outline-none focus:border-cyan-400 px-4 py-3 text-[13px] font-mono resize-none"
+                          />
+                          <div className="flex items-center justify-end gap-3">
+                            <button onClick={cancelEdit} className="font-mono text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-wider transition-colors">
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => saveEdit(m.id)}
+                              disabled={!editDraft.trim()}
+                              className="font-mono text-[10px] text-cyan-300 uppercase tracking-wider bg-cyan-950/40 border border-cyan-500/40 hover:bg-cyan-950/70 disabled:opacity-40 disabled:hover:bg-cyan-950/40 transition-colors px-3 py-1.5 rounded"
+                            >
+                              Save &amp; Resend
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className={`
+                            px-4 py-3 text-[13px] shadow-lg min-w-0 max-w-full overflow-hidden
+                            ${isUser
+                              ? 'bg-slate-800 text-slate-100 rounded-2xl rounded-tr-sm border-r-2 border-slate-600'
+                              : 'bg-cyan-950/20 text-cyan-50 rounded-2xl rounded-tl-sm border-l-2 border-cyan-500'}
+                          `}
+                        >
+                          {renderMessageContent(m)}
+                          {isStreamingThis && (
+                            <motion.span
+                              className="inline-block w-[7px] h-[13px] bg-cyan-400 ml-0.5 align-middle"
+                              animate={{ opacity: [1, 1, 0, 0] }}
+                              transition={{ duration: 0.9, repeat: Infinity, times: [0, 0.5, 0.5, 1] }}
+                            />
+                          )}
+                        </div>
+                      )}
 
                       {showFollowUps && (
                         <motion.div

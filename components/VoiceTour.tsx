@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export interface TourStep {
@@ -146,7 +147,11 @@ export default function VoiceTour({ storageKey, steps, onTourEnd }: VoiceTourPro
       
       if (element) {
         if (lastScrolledStepRef.current !== currentStep) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // 'nearest' only scrolls if the target isn't already visible —
+          // 'center' was forcing a scroll on every step even for elements
+          // (like a corner-pinned legend) that were already fully on
+          // screen, making fixed UI chrome visibly jump mid-tour.
+          element.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
           lastScrolledStepRef.current = currentStep;
         }
 
@@ -257,8 +262,17 @@ export default function VoiceTour({ storageKey, steps, onTourEnd }: VoiceTourPro
   };
 
   if (tourState === 'idle') return null;
+  // Rendered via a portal to document.body — this component is mounted
+  // inside each page, nested under .shell (the dashboard's root wrapper),
+  // which sets its own position:relative + z-index:1 stacking context.
+  // That traps this z-index:99990 overlay so it only wins against other
+  // things ALSO nested in .shell — anything portaled straight to body with
+  // even a modest z-index (like PatientModal's 200) beats the whole .shell
+  // subtree regardless of this component's own (much larger) number. The
+  // portal puts this at the same top-level playing field as those.
+  if (typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <AnimatePresence>
       <div className="fixed inset-0 z-[99990] pointer-events-auto overflow-hidden flex items-center justify-center">
         
@@ -337,6 +351,7 @@ export default function VoiceTour({ storageKey, steps, onTourEnd }: VoiceTourPro
           </>
         )}
       </div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }
