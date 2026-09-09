@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { useAllSessions } from '@/hooks';
 import { useNucleusStore } from '@/store/useNucleusStore';
-import { pwatColor, formatDate } from '@/lib/utils';
+import { pwatColor, formatDate, parseTimestamp } from '@/lib/utils';
 import { jsPDF } from 'jspdf';
 
 // 🛡️ IMPORTS FOR THE PERSONALIZED VOICE TOUR
@@ -39,7 +39,7 @@ export default function ReportsPage() {
       const matchesSearch = session.session_id.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesTriage = triageFilter === 'All' || session.triage_category === triageFilter;
       
-      const sessionDate = new Date(session.created_at).getTime();
+      const sessionDate = parseTimestamp(session.created_at)?.getTime() ?? NaN;
       const now = Date.now();
       const daysDiff = (now - sessionDate) / (1000 * 3600 * 24);
       let matchesDate = true;

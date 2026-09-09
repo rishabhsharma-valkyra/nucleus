@@ -79,6 +79,130 @@ function getMessageText(m: any): string {
   return normalizeHyphens(textElements.join('\n'));
 }
 
+// groq/compound-mini streams its whole chain of thought as `reasoning` parts
+// BEFORE the first `text` part arrives — several hundred chunks of it. Since
+// getMessageText() only reads `text` parts, the assistant message existed for
+// that entire stretch with nothing to render, which is what put an empty
+// bubble on screen. Read the reasoning too, and show it.
+function getMessageReasoning(m: any): string {
+  if (!Array.isArray(m.parts)) return '';
+  return m.parts
+    .filter((p: any) => p.type === 'reasoning' && p.text)
+    .map((p: any) => p.text)
+    .join('\n')
+    .trim();
+}
+
+function hasMessageBody(m: any): boolean {
+  return getMessageText(m).trim().length > 0;
+}
+
+// Three-dot "assistant is composing" indicator, for the sliver of time before
+// even the reasoning has started.
+function TypingDots() {
+  return (
+    <div className="flex items-center gap-1.5 py-0.5" aria-label="Valkyra is responding">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="valkyra-dot inline-block w-1.5 h-1.5 rounded-full bg-cyan-400"
+          style={{ animationDelay: `${i * 0.16}s` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Collapsible chain-of-thought panel, in the shape people already know from
+// Gemini and ChatGPT: a shimmering "Thinking…" line while the model works
+// (expanded, so there is always something moving to read), collapsing to a
+// quiet "Thought for 4s" disclosure once the actual answer starts streaming.
+function ThinkingBlock({
+  reasoning,
+  isActive,
+  durationMs,
+}: {
+  reasoning: string;
+  isActive: boolean;
+  durationMs?: number;
+}) {
+  const [open, setOpen] = useState(isActive);
+  // Once the reader has expressed a preference, stop overriding it.
+  const userToggledRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!userToggledRef.current) setOpen(isActive);
+  }, [isActive]);
+
+  // Keep the newest reasoning in view while it streams, the way a log tail does.
+  useEffect(() => {
+    if (open && isActive && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [reasoning, open, isActive]);
+
+  const label = isActive
+    ? 'Thinking'
+    : durationMs != null
+      ? `Thought for ${Math.max(1, Math.round(durationMs / 1000))}s`
+      : 'Reasoning';
+
+  return (
+    <div className={`${isActive ? 'mb-0' : 'mb-3'}`}>
+      <button
+        type="button"
+        onClick={() => { userToggledRef.current = true; setOpen((o) => !o); }}
+        className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-cyan-400/70 hover:text-cyan-300 transition-colors py-0.5"
+      >
+        <motion.svg
+          className="w-3 h-3 flex-shrink-0"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          animate={isActive ? { rotate: 360 } : { rotate: 0 }}
+          transition={isActive ? { duration: 2.4, repeat: Infinity, ease: 'linear' } : { duration: 0.2 }}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </motion.svg>
+        <span className={isActive ? 'valkyra-thinking-label' : ''}>{label}</span>
+        <motion.svg
+          className="w-3 h-3 flex-shrink-0 opacity-60"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </motion.svg>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className="overflow-hidden"
+          >
+            <div
+              ref={scrollRef}
+              className="mt-2 max-h-40 overflow-y-auto cyber-scrollbar border-l border-cyan-900/50 pl-3 pr-1"
+            >
+              <p className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-slate-400/90 m-0">
+                {reasoning}
+                {isActive && <span className="valkyra-caret" />}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // ── Persistent chat history (per signed-in user, this browser only) ──────
 // Multiple threads, not one overwritten conversation — "New Chat" archives
 // the current thread instead of discarding it, and a history panel lets you
@@ -94,6 +218,24 @@ interface ChatThread {
 const THREAD_RETENTION_DAYS = 10;
 const THREAD_LIMIT = 30;
 const threadsKey = (email: string) => `valkyra-chat-threads:${email}`;
+
+// ── Resizable panel ─────────────────────────────────────────────────────
+// The drawer used to be locked to Tailwind's max-w-md (448px), which is
+// cramped for the wide markdown tables the assistant returns. Width is now
+// dragged from the panel's left edge and remembered per browser.
+const DEFAULT_PANEL_WIDTH = 448; // what max-w-md resolved to
+const MIN_PANEL_WIDTH = 380;
+const MAX_PANEL_WIDTH_RATIO = 0.95;
+const PANEL_WIDTH_KEY = 'valkyra-chat-panel-width';
+// Never wider than the viewport, and never below the minimum unless the
+// viewport itself is narrower than that (phones), where the panel just
+// takes what's available.
+function clampPanelWidth(width: number): number {
+  if (typeof window === 'undefined') return width;
+  const max = Math.round(window.innerWidth * MAX_PANEL_WIDTH_RATIO);
+  const min = Math.min(MIN_PANEL_WIDTH, max);
+  return Math.min(Math.max(Math.round(width), min), max);
+}
 
 function pruneThreads(threads: ChatThread[]): ChatThread[] {
   const cutoff = Date.now() - THREAD_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -311,6 +453,119 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
   const [showTooltip, setShowTooltip] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // ── Panel width ───────────────────────────────────────────────────────
+  // Starts at the default rather than reading localStorage during render,
+  // so the server and client first paint agree.
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  // Width to come back to when un-maximizing.
+  const restoreWidthRef = useRef(DEFAULT_PANEL_WIDTH);
+
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+      if (saved > 0) {
+        const w = clampPanelWidth(saved);
+        setPanelWidth(w);
+        restoreWidthRef.current = w;
+      }
+    } catch {
+      // Storage blocked — the default width is fine.
+    }
+  }, []);
+
+  const persistPanelWidth = (w: number) => {
+    try { localStorage.setItem(PANEL_WIDTH_KEY, String(w)); } catch {}
+  };
+
+  // A window that shrinks below the saved width would otherwise push the
+  // panel off-screen.
+  useEffect(() => {
+    const onResize = () => setPanelWidth((w) => clampPanelWidth(w));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // While dragging, force the resize cursor everywhere and kill text
+  // selection — otherwise the pointer flickers and the chat text highlights
+  // as the user drags across it.
+  useEffect(() => {
+    if (!isResizing) return;
+    const { style } = document.body;
+    const prevCursor = style.cursor;
+    const prevSelect = style.userSelect;
+    style.cursor = 'col-resize';
+    style.userSelect = 'none';
+    return () => { style.cursor = prevCursor; style.userSelect = prevSelect; };
+  }, [isResizing]);
+
+  const maxPanelWidth = typeof window !== 'undefined'
+    ? Math.round(window.innerWidth * MAX_PANEL_WIDTH_RATIO)
+    : DEFAULT_PANEL_WIDTH;
+  const isMaximized = panelWidth >= maxPanelWidth - 2;
+
+
+  const toggleMaximize = () => {
+    if (isMaximized) {
+      const restored = clampPanelWidth(
+        restoreWidthRef.current >= maxPanelWidth - 2 ? DEFAULT_PANEL_WIDTH : restoreWidthRef.current
+      );
+      setPanelWidth(restored);
+      persistPanelWidth(restored);
+    } else {
+      restoreWidthRef.current = panelWidth;
+      const full = clampPanelWidth(maxPanelWidth);
+      setPanelWidth(full);
+      persistPanelWidth(full);
+    }
+  };
+
+  // Pointer capture keeps move events flowing to the grip even when the
+  // cursor outruns it, so no window-level listeners are needed.
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsResizing(true);
+  };
+
+  const onResizeMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isResizing) return;
+    setPanelWidth(clampPanelWidth(window.innerWidth - e.clientX));
+  };
+
+  const endResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isResizing) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setIsResizing(false);
+    restoreWidthRef.current = panelWidth;
+    persistPanelWidth(panelWidth);
+  };
+
+  // Keyboard equivalent, so the panel is resizable without a mouse.
+  const onResizeKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = e.shiftKey ? 80 : 20;
+    let next: number | null = null;
+    if (e.key === 'ArrowLeft') next = panelWidth + step;
+    else if (e.key === 'ArrowRight') next = panelWidth - step;
+    else if (e.key === 'Home') next = maxPanelWidth;
+    else if (e.key === 'End') next = MIN_PANEL_WIDTH;
+    if (next === null) return;
+    e.preventDefault();
+    const w = clampPanelWidth(next);
+    setPanelWidth(w);
+    restoreWidthRef.current = w;
+    persistPanelWidth(w);
+  };
+
+  const resetPanelWidth = () => {
+    const w = clampPanelWidth(DEFAULT_PANEL_WIDTH);
+    setPanelWidth(w);
+    restoreWidthRef.current = w;
+    persistPanelWidth(w);
+  };
+
   const [input, setInput] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -380,6 +635,25 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
 
   const { messages, sendMessage, setMessages, status: chatStatus, error } = useChat(chatConfig);
   const isLoading = chatStatus === 'submitted' || chatStatus === 'streaming';
+
+  // How long the model spent reasoning before its answer began, so the
+  // collapsed disclosure can say "Thought for 4s". Kept in a ref because it
+  // must not trigger a re-render of its own on every streamed chunk; the
+  // value is only read once the answer is already re-rendering anyway.
+  const thinkTimersRef = useRef<Record<string, { start: number; end?: number }>>({});
+
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (!last || last.role === 'user') return;
+    const timers = thinkTimersRef.current;
+    if (getMessageReasoning(last) && !timers[last.id]) {
+      timers[last.id] = { start: Date.now() };
+    }
+    const entry = timers[last.id];
+    if (entry && entry.end == null && (hasMessageBody(last) || !isLoading)) {
+      entry.end = Date.now();
+    }
+  }, [messages, isLoading]);
 
   // Persist once a turn settles (avoids writing to localStorage on every
   // streamed token). A thread with only the greeting never gets saved, so
@@ -587,18 +861,40 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
     ul: ({ node, ...props }: any) => <ul className="list-disc list-outside ml-4 mb-3 space-y-1 marker:text-cyan-500" {...props} />,
     ol: ({ node, ...props }: any) => <ol className="list-decimal list-outside ml-4 mb-3 space-y-1 marker:text-cyan-500" {...props} />,
     li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
-    // table-fixed + w-full forces columns to share the bubble's actual width
-    // and wrap their content, rather than demanding their natural
-    // (max-content) width — a narrow ~320px drawer can't fit a full UUID
-    // plus two more columns on one line no matter how it's scrolled, so
-    // wrapping is what keeps the table fully visible instead of clipped.
+    // One layout at every width: columns size to their own content and never
+    // wrap, and the wrapper scrolls if the total exceeds the bubble.
+    //
+    // The previous version keyed off panel width and pinned the first column
+    // to 42%, on the assumption that column one is always the session ID.
+    // It isn't — the model often leads with a Rank column, which then ate
+    // 42% of the table while the ID it was protecting got squeezed to
+    // "9597b…". Forcing widths from outside means guessing at the table's
+    // semantics, and that guess is wrong often enough to look broken.
+    // Letting the content size itself is right for every column order, and
+    // horizontal scroll is a far better failure mode than shattering
+    // "SESSION ID" into "SESSI ON ID".
     table: ({ node, ...props }: any) => (
-      <div className="max-w-full my-4 border border-cyan-900/30 rounded-lg overflow-hidden">
-        <table className="chat-table w-full text-left border-collapse table-fixed" {...props} />
+      // w-fit, not a plain block: the wrapper draws the border, so leaving it
+      // full-width put a rounded box around the table plus a stretch of empty
+      // space wherever the columns were narrower than the bubble. It now
+      // shrinks to the table and still caps at max-w-full, so an oversized
+      // table scrolls instead of pushing the bubble wider.
+      <div className="chat-scroll-x w-fit max-w-full my-4 border border-cyan-900/30 rounded-lg overflow-x-auto cyber-scrollbar">
+        <table className="chat-table w-auto text-left border-collapse table-auto" {...props} />
       </div>
     ),
-    th: ({ node, ...props }: any) => <th className="bg-cyan-950/40 border-b border-cyan-800/50 p-2 font-mono text-cyan-400 text-[9px] uppercase tracking-wider break-words" {...props} />,
-    td: ({ node, ...props }: any) => <td className="border-b border-cyan-900/20 p-2 text-slate-200 text-[11px] last:border-b-0 break-words" {...props} />,
+    th: ({ node, ...props }: any) => (
+      <th
+        className="bg-cyan-950/40 border-b border-cyan-800/50 px-2 py-2 font-mono text-cyan-400 text-[9px] uppercase tracking-wider whitespace-nowrap"
+        {...props}
+      />
+    ),
+    td: ({ node, ...props }: any) => (
+      <td
+        className="border-b border-cyan-900/20 px-2 py-2 text-slate-200 text-[11px] last:border-b-0 whitespace-nowrap align-middle"
+        {...props}
+      />
+    ),
     a: ({ node, href, children, ...props }: any) => {
       if (typeof href === 'string' && href.startsWith('session:')) {
         const sessionId = href.slice('session:'.length);
@@ -607,14 +903,14 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
             type="button"
             onClick={() => setActivePatientId(sessionId)}
             title={sessionId}
-            className="inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 font-mono text-[11px] hover:bg-cyan-500/20 hover:border-cyan-400/50 transition-all align-middle max-w-full min-w-0"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 font-mono text-[11px] hover:bg-cyan-500/20 hover:border-cyan-400/50 transition-all align-middle whitespace-nowrap"
           >
             <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-            {/* min-w-0 is load-bearing here — without it, a flex child (this
-                span) refuses to shrink below its text's natural width, so
-                truncate's ellipsis never kicks in and the chip overflows
-                its table cell into the next column instead of clipping. */}
-            <span className="truncate min-w-0">{children}</span>
+            {/* Never truncated. The label is already an 8-character prefix
+                (see linkifySessionIds), so clipping it further produced
+                "9597b…" — an ID short enough to be unrecognisable. The cell
+                sizes to this instead. */}
+            <span className="whitespace-nowrap">{children}</span>
           </button>
         );
       }
@@ -646,14 +942,83 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
   return (
     <>
       <style dangerouslySetInnerHTML={{__html: `
-        .cyber-scrollbar::-webkit-scrollbar { width: 4px; }
+        /* height, not just width: this class also styles the horizontal bar
+           under a sideways-scrolling table, which would otherwise render as
+           a chunky default scrollbar. */
+        .cyber-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .cyber-scrollbar::-webkit-scrollbar-track { background: rgba(2,6,23,0.5); }
         .cyber-scrollbar::-webkit-scrollbar-thumb { background: rgba(34,211,238,0.3); border-radius: 4px; }
         .cyber-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(34,211,238,0.6); }
-        /* table-fixed splits columns evenly by default, which starves an ID
-           column (usually first) that needs more room than a short Triage/
-           status column next to it — give it a head start. */
-        .chat-table th:first-child, .chat-table td:first-child { width: 42%; }
+
+        /* Table columns carry no forced widths — see the table renderer for
+           why imposing them from outside kept going wrong. */
+
+        /* Scroll hint for a table wider than the panel. The two "cover"
+           layers are attached local so they travel with the content and sit
+           over the shadow once you reach that end; the two cyan layers are
+           attached scroll so they stay pinned to the edges. Net effect: an
+           edge glow appears only on the side you can still scroll toward,
+           with no JS and no scroll listener. */
+        .chat-scroll-x {
+          background-image:
+            linear-gradient(to right, rgba(2,6,23,1), rgba(2,6,23,0)),
+            linear-gradient(to left,  rgba(2,6,23,1), rgba(2,6,23,0)),
+            linear-gradient(to right, rgba(34,211,238,0.30), rgba(34,211,238,0)),
+            linear-gradient(to left,  rgba(34,211,238,0.30), rgba(34,211,238,0));
+          background-position: 0 0, 100% 0, 0 0, 100% 0;
+          background-repeat: no-repeat;
+          background-size: 26px 100%, 26px 100%, 16px 100%, 16px 100%;
+          background-attachment: local, local, scroll, scroll;
+        }
+
+        /* Sweeping highlight across the "Thinking" label — the standard
+           signal that a model is working, and the thing that makes the wait
+           read as progress rather than as a stalled empty box. */
+        @keyframes valkyra-shimmer {
+          0%   { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        .valkyra-thinking-label {
+          background: linear-gradient(90deg,
+            rgba(103,232,249,0.35) 0%,
+            rgba(207,250,254,1)   50%,
+            rgba(103,232,249,0.35) 100%);
+          background-size: 200% 100%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          animation: valkyra-shimmer 2.2s linear infinite;
+        }
+
+        @keyframes valkyra-dot {
+          0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+          30%           { opacity: 1;    transform: translateY(-3px); }
+        }
+        .valkyra-dot { animation: valkyra-dot 1.2s ease-in-out infinite; }
+
+        @keyframes valkyra-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+        .valkyra-caret {
+          display: inline-block;
+          width: 6px;
+          height: 11px;
+          margin-left: 2px;
+          vertical-align: middle;
+          background: rgba(34,211,238,0.7);
+          animation: valkyra-blink 0.9s step-end infinite;
+        }
+
+        /* Respect a reduced-motion preference — keep the states legible,
+           drop the movement. */
+        @media (prefers-reduced-motion: reduce) {
+          .valkyra-thinking-label {
+            animation: none;
+            color: rgb(165,243,252);
+            -webkit-background-clip: border-box;
+            background-clip: border-box;
+            background: none;
+          }
+          .valkyra-dot, .valkyra-caret { animation: none; opacity: 0.7; }
+        }
       `}} />
 
       {/* 🛡️ THE FIX: Added id="spotlight-bot" to this wrapper so the Tour Engine can track it */}
@@ -731,11 +1096,55 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
               className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110]"
             />
 
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed top-0 right-0 h-full w-full max-w-md z-[120] flex flex-col shadow-2xl"
-              style={{ background: 'rgba(2, 6, 23, 0.95)', borderLeft: '1px solid rgba(34,211,238,0.2)' }}
+              className="fixed top-0 right-0 h-full z-[120] flex flex-col shadow-2xl"
+              style={{
+                width: panelWidth,
+                maxWidth: '100vw',
+                background: 'rgba(2, 6, 23, 0.95)',
+                borderLeft: '1px solid rgba(34,211,238,0.2)',
+              }}
             >
+              {/* Drag handle on the left edge. Sits slightly outside the
+                  panel so it's grabbable without stealing clicks from the
+                  message list, and widens/glows on hover so it's findable. */}
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize chat panel"
+                aria-valuenow={panelWidth}
+                aria-valuemin={MIN_PANEL_WIDTH}
+                aria-valuemax={maxPanelWidth}
+                tabIndex={0}
+                onPointerDown={startResize}
+                onPointerMove={onResizeMove}
+                onPointerUp={endResize}
+                onPointerCancel={endResize}
+                onKeyDown={onResizeKeyDown}
+                onDoubleClick={resetPanelWidth}
+                title="Drag to resize · double-click to reset"
+                className="group absolute left-0 top-0 h-full w-2 -ml-1 z-[121] cursor-col-resize touch-none focus:outline-none"
+              >
+                {/* The visible rail: a hairline that thickens on hover, focus
+                    or while dragging. */}
+                <div
+                  className={`absolute inset-y-0 left-1/2 -translate-x-1/2 rounded-full transition-all duration-150
+                    ${isResizing
+                      ? 'w-[3px] bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.8)]'
+                      : 'w-px bg-cyan-500/25 group-hover:w-[3px] group-hover:bg-cyan-400/80 group-focus:w-[3px] group-focus:bg-cyan-400/80'}`}
+                />
+                {/* Grip dots, centred vertically — the conventional "this is
+                    draggable" affordance. */}
+                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-[3px] transition-opacity duration-150
+                  ${isResizing ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus:opacity-100'}`}
+                >
+                  {[0, 1, 2].map((i) => (
+                    <span key={i} className="block w-[3px] h-[3px] rounded-full bg-cyan-300" />
+                  ))}
+                </div>
+              </div>
+
               <div className="flex items-center justify-between p-6 bg-slate-950/80 border-b border-cyan-900/30">
                 <div className="flex items-center gap-4">
                   <div className="relative flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-950/50 border border-cyan-500/30 overflow-hidden">
@@ -840,6 +1249,24 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                     )}
                   </button>
 
+                  {/* One-click width toggle, for people who'd rather not drag
+                      the edge handle. */}
+                  <button
+                    onClick={toggleMaximize}
+                    title={isMaximized ? 'Shrink panel' : 'Expand panel'}
+                    className={`p-2 rounded-md transition-colors ${isMaximized ? 'text-cyan-400 bg-cyan-950/30' : 'text-slate-500 hover:text-cyan-400 hover:bg-cyan-950/30'}`}
+                  >
+                    {isMaximized ? (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20H4v-5M20 9V4h-5M4 20l6-6M20 4l-6 6" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 9V4h5M20 15v5h-5M4 4l6 6M20 20l-6-6" />
+                      </svg>
+                    )}
+                  </button>
+
                   {/* Dismiss action, separated with a divider since it's a different category from the icons above. */}
                   <div className="ml-1 pl-1" style={{ borderLeft: '1px solid rgba(255,255,255,0.08)' }}>
                     <button onClick={() => setIsOpen(false)} title="Close" className="text-slate-500 hover:text-cyan-400 transition-colors p-2 hover:bg-cyan-950/30 rounded-md">
@@ -854,7 +1281,14 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                 {messages.map((m: any, i: number) => {
                   const isUser = m.role === 'user';
                   const isLastMessage = i === messages.length - 1;
-                  const isStreamingThis = !isUser && isLastMessage && chatStatus === 'streaming';
+                  const hasBody = !isUser && hasMessageBody(m);
+                  const reasoning = isUser ? '' : getMessageReasoning(m);
+                  // Only blink the caret next to text that actually exists.
+                  const isStreamingThis = !isUser && isLastMessage && chatStatus === 'streaming' && hasBody;
+                  // "Still working" = the newest reply, in flight, no answer text yet.
+                  const isThinkingNow = !isUser && isLastMessage && isLoading && !hasBody;
+                  const timer = thinkTimersRef.current[m.id];
+                  const thoughtMs = timer?.end != null ? timer.end - timer.start : undefined;
                   const showFollowUps = !isUser && isLastMessage && chatStatus === 'ready' && messages.length > 1;
                   const isEditingThis = editingMessageId === m.id;
                   return (
@@ -862,6 +1296,10 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                       key={m.id}
                       initial={{ opacity: 0, y: 15, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
+                      // Bubbles hug their content and may grow to 88% of the
+                      // panel. A content-sized table needs no stretching —
+                      // widening the bubble past the table just adds dead
+                      // space to its right.
                       className={`group flex flex-col max-w-[88%] min-w-0 ${isEditingThis ? 'w-full' : ''} ${isUser ? 'self-end items-end' : 'self-start items-start'}`}
                     >
                       <div className={`flex items-center gap-1.5 mb-1.5 ${isUser ? 'flex-row-reverse' : ''}`}>
@@ -915,14 +1353,37 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                               : 'bg-cyan-950/20 text-cyan-50 rounded-2xl rounded-tl-sm border-l-2 border-cyan-500'}
                           `}
                         >
-                          {renderMessageContent(m)}
-                          {isStreamingThis && (
-                            <motion.span
-                              className="inline-block w-[7px] h-[13px] bg-cyan-400 ml-0.5 align-middle"
-                              animate={{ opacity: [1, 1, 0, 0] }}
-                              transition={{ duration: 0.9, repeat: Infinity, times: [0, 0.5, 0.5, 1] }}
+                          {/* Reasoning first, as its own disclosure — then the
+                              answer. Between them these cover every state, so
+                              the bubble is never rendered empty. */}
+                          {reasoning && (
+                            <ThinkingBlock
+                              reasoning={reasoning}
+                              isActive={isThinkingNow}
+                              durationMs={thoughtMs}
                             />
                           )}
+
+                          {hasBody ? (
+                            <>
+                              {renderMessageContent(m)}
+                              {isStreamingThis && (
+                                <motion.span
+                                  className="inline-block w-[7px] h-[13px] bg-cyan-400 ml-0.5 align-middle"
+                                  animate={{ opacity: [1, 1, 0, 0] }}
+                                  transition={{ duration: 0.9, repeat: Infinity, times: [0, 0.5, 0.5, 1] }}
+                                />
+                              )}
+                            </>
+                          ) : isUser ? (
+                            renderMessageContent(m)
+                          ) : isThinkingNow && !reasoning ? (
+                            <TypingDots />
+                          ) : !isThinkingNow && !reasoning ? (
+                            <span className="font-mono text-[11px] text-slate-500">
+                              No response received.
+                            </span>
+                          ) : null}
                         </div>
                       )}
 

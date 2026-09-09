@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useAllSessions } from '@/hooks';
 import { motion, AnimatePresence } from 'framer-motion';
-import { pwatColor } from '@/lib/utils';
+import { pwatColor, parseTimestamp } from '@/lib/utils';
 import { sessionStatus } from '@/lib/sessionsAsIncidents';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { HoverTooltip } from '@/components/ui/MetricCard';
@@ -16,16 +16,21 @@ function MissionClock({ startTime }: { startTime: string }) {
   const [elapsed, setElapsed] = useState('00:00:00');
 
   useEffect(() => {
-    const start = new Date(startTime).getTime();
+    const start = parseTimestamp(startTime)?.getTime();
+    // No usable start time — show a dash rather than ticking "NaN:NaN:NaN".
+    if (start === undefined) {
+      setElapsed('--:--:--');
+      return;
+    }
 
     const update = () => {
-      const diff = Math.floor((Date.now() - start) / 1000);
+      const diff = Math.max(0, Math.floor((Date.now() - start) / 1000));
       const h = Math.floor(diff / 3600).toString().padStart(2, '0');
       const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
       const s = (diff % 60).toString().padStart(2, '0');
       setElapsed(`${h}:${m}:${s}`);
     };
-    
+
     update();
     const int = setInterval(update, 1000);
     return () => clearInterval(int);
@@ -43,7 +48,7 @@ export default function IncidentsPage() {
   // operations — there's no dedicated incidents feed yet. See lib/sessionsAsIncidents.ts.
   const activeIncidents = sessions
     .filter((s: any) => sessionStatus(s.created_at) === 'Active')
-    .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    .sort((a: any, b: any) => (parseTimestamp(b.created_at)?.getTime() ?? 0) - (parseTimestamp(a.created_at)?.getTime() ?? 0));
 
   // 🛡️ EXTRACT USER NAME FOR PERSONALIZED GREETING
   const { data: session } = useSession();
