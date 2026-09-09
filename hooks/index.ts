@@ -45,14 +45,40 @@ export function useSessions(limit = 20, offset = 0) {
   });
 }
 
+// The backend hard-caps /patients at 100 rows per request (getPagination in
+// app.js), so a single fetchSessions(100) silently truncated the moment the
+// dataset passed 100 sessions — Overview, Reports, Mortality and the
+// critical-case watcher would all have been quietly computing over the
+// newest 100 only, disagreeing with the totals from /patients/summary.
+// Page through instead, with a ceiling so a runaway dataset can't spin here.
+const SESSIONS_PAGE_SIZE = 100;
+const SESSIONS_MAX_PAGES = 20; // 2000 sessions
+
 export function useAllSessions() {
   const setAllSessions = useNucleusStore((s) => s.setAllSessions);
   return useQuery({
     queryKey: queryKeys.allSessions,
     queryFn: async () => {
-      const data = await fetchSessions(100, 0);
-      setAllSessions(data.sessions);
-      return data;
+      const all: Awaited<ReturnType<typeof fetchSessions>>['sessions'] = [];
+      let truncated = false;
+
+      for (let page = 0; page < SESSIONS_MAX_PAGES; page++) {
+        const data = await fetchSessions(SESSIONS_PAGE_SIZE, page * SESSIONS_PAGE_SIZE);
+        const batch = data.sessions ?? [];
+        all.push(...batch);
+        if (batch.length < SESSIONS_PAGE_SIZE) break;
+        if (page === SESSIONS_MAX_PAGES - 1) truncated = true;
+      }
+
+      if (truncated) {
+        console.warn(
+          `[useAllSessions] Stopped at ${all.length} sessions (${SESSIONS_MAX_PAGES}-page ceiling). ` +
+          'Dashboard aggregates are now a partial view — move these pages to server-side aggregation.'
+        );
+      }
+
+      setAllSessions(all);
+      return { total_returned: all.length, sessions: all };
     },
     staleTime: 60_000,
     refetchInterval: 60_000,
