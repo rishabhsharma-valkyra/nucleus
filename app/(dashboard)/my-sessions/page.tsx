@@ -45,9 +45,9 @@ export default function MySessionsPage() {
       targetId: 'spotlight-modal-container', // Highlights the entire modal box
       tag: 'CASE DETAILS',
       title: 'Telemetry & Export',
-      script: 'Opening an incident reveals the full telemetry file. From here, you can review the AI clinical analysis or export a PDF brief. Briefing complete.',
+      script: 'Opening an incident reveals the full telemetry file. From here, you can review the clinical analysis or export a PDF brief. Briefing complete.',
       action: () => {
-        // Automatically open the modal right before the AI speaks!
+        // Automatically open the modal right before the Sentinel speaks!
         if (firstSessionId) setActivePatientId(firstSessionId);
       }
     }

@@ -43,8 +43,8 @@ export default function OverviewPage() {
     {
       targetId: 'spotlight-bot',
       tag: 'VOICE INTELLIGENCE',
-      title: 'Valkyra AI Assistant',
-      script: 'I am Valkyra AI. You can speak to me at any time to analyze telemetry or pull records. Briefing complete.'
+      title: 'Valkyra Sentinel',
+      script: 'I am the Valkyra Sentinel. You can speak to me at any time to analyze telemetry or pull records. Briefing complete.'
     }
   ];
 
@@ -163,7 +163,7 @@ export default function OverviewPage() {
           <ScannerSweep />
           <div className="card-header relative z-10">
             <span className="card-title">Photographic Wound Assessment Tool (PWAT) Breakdown</span>
-            <span className="badge badge-ai">AI SCORED</span>
+            <span className="badge badge-ai">MODEL SCORED</span>
           </div>
           <div className="injury-list relative z-10">
             {sessLoading ? (
@@ -271,7 +271,7 @@ export default function OverviewPage() {
         <motion.div custom={++animationIndex} initial="hidden" animate="show" variants={staggerReveal} className="card relative overflow-hidden">
           <ScannerSweep />
           <div className="card-header relative z-10">
-            <span className="card-title">AI Recommendation Accuracy</span>
+            <span className="card-title">Model Recommendation Accuracy</span>
             <span className="badge badge-ai">MODEL v3.1</span>
           </div>
           <div className="acc-area relative z-10">

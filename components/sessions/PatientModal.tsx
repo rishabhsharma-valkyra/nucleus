@@ -112,7 +112,7 @@ export default function PatientModal() {
     { time: '08:40:02 PM', e: 'Headset uplink stream configured by field unit.', color: 'rgba(255,255,255,0.5)' },
     ...frames.map((f: any, idx: number) => ({
       time: `08:40:0${5 + idx} PM`,
-      e: `AI generated PWAT score for Frame ${f.frame_index ?? idx + 1}: ${f.pwat_score ?? '—'}`,
+      e: `Automated PWAT score for Frame ${f.frame_index ?? idx + 1}: ${f.pwat_score ?? '—'}`,
       color: 'var(--amber)'
     })),
     { time: '08:40:13 PM', e: 'Operator deployed manual debridement.', color: 'var(--cyan)' }
@@ -201,7 +201,7 @@ export default function PatientModal() {
 
           <div style={{ display: 'flex', gap: 20, padding: '0 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
             {[
-              { id: 'analytics', label: 'AI Core Analytics' },
+              { id: 'analytics', label: 'Core Analytics' },
               { id: 'timeline', label: 'Timeline & Telemetry' },
               { id: 'pre-arrival', label: 'Hospital Pre-Arrival Desk' }
             ].map((tab) => (

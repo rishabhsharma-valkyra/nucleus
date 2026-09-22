@@ -136,7 +136,7 @@ export default function IncidentsPage() {
                       <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">TRIAGE</div>
                       <span className={`triage-badge triage-${inc.triage_category} uppercase`}>{inc.triage_category}</span>
                     </div>
-                    <HoverTooltip tooltip="Photographic Wound Assessment Tool score (0-20) — a severity rating derived from the AI's analysis of the wound image. 0-4 Minor · 4-8 Delayed · 8-12 Urgent · 12-20 Critical.">
+                    <HoverTooltip tooltip="Photographic Wound Assessment Tool score (0-20) — a severity rating derived from automated analysis of the wound image. 0-4 Minor · 4-8 Delayed · 8-12 Urgent · 12-20 Critical.">
                       <div>
                         <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">PWAT SCORE</div>
                         <div className="text-xs font-mono font-bold" style={{ color: pwatColor(inc.pwat_score) }}>{Number(inc.pwat_score).toFixed(1)}</div>

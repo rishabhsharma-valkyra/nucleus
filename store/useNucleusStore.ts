@@ -48,7 +48,7 @@ interface NucleusStore {
   browserNotifyEnabled: boolean;
   setBrowserNotifyEnabled: (v: boolean) => void;
 
-  // Valkyra AI chat preferences (persisted)
+  // Valkyra Sentinel chat preferences (persisted)
   voiceReplyEnabled: boolean;
   setVoiceReplyEnabled: (v: boolean) => void;
 }

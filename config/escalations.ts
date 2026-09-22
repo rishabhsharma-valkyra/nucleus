@@ -5,7 +5,7 @@ import { RESPONDERS } from './fleet';
 // have been called in" for a review; this is a counterfactual clinical judgment,
 // not something ingested live. Aggregate figures are tuned to roughly reconcile
 // with the "Doctor Calls (Static): 18 this month" / "Escalation Rate: 12.3%"
-// figures already shown on the AI Performance page.
+// figures already shown on the Model Performance page.
 export interface EscalationRecord {
   id: string;
   responder_id: string;

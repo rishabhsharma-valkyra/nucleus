@@ -42,7 +42,7 @@ export default function SidebarBotPresence({ alert = false }: { alert?: boolean 
       <div
         style={{ fontSize: 8, fontFamily: 'var(--mono)', color: alert ? 'var(--red)' : 'var(--text3)', letterSpacing: 1.5, marginTop: 4, transition: 'color 0.3s ease' }}
       >
-        VALKYRA AI
+        VALKYRA SENTINEL
       </div>
     </motion.div>
   );

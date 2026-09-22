@@ -62,9 +62,9 @@ export default function TrainingIntelPage() {
     },
     {
       targetId: 'spotlight-recommendations',
-      tag: 'AI GENERATION',
+      tag: 'AUTO-GENERATED',
       title: 'Dynamic Drill Protocols',
-      script: 'Based on the identified vulnerabilities, Valkyra AI instantly generates targeted remedial drills to ensure peak operational readiness. Briefing complete.'
+      script: 'Based on the identified vulnerabilities, the Valkyra Sentinel instantly generates targeted remedial drills to ensure peak operational readiness. Briefing complete.'
     }
   ];
 
@@ -108,7 +108,7 @@ export default function TrainingIntelPage() {
             </HoverTooltip>
 
             {/* Vulnerabilities Card */}
-            <HoverTooltip tooltip="Number of procedural gaps flagged as high-risk by continuous AI audit of field telemetry.">
+            <HoverTooltip tooltip="Number of procedural gaps flagged as high-risk by continuous automated audit of field telemetry.">
               <motion.div variants={cardVariant} className="metric-card mc-red relative overflow-hidden transition-all hover:-translate-y-1">
                 <div className="metric-label relative z-10">Critical Vulnerabilities</div>
                 <div className="metric-value cv-red relative z-10">3</div>
@@ -195,7 +195,7 @@ export default function TrainingIntelPage() {
               </div>
             </motion.div>
 
-            {/* 🛡️ TARGET 3: RIGHT - AI Recommendations */}
+            {/* 🛡️ TARGET 3: RIGHT - Drill Recommendations */}
             <motion.div id="spotlight-recommendations" variants={cardVariant} className="card relative overflow-hidden">
               <div className="absolute inset-0 pointer-events-none rounded-lg overflow-hidden opacity-20">
                 <motion.div className="w-full h-[1px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent shadow-[0_0_8px_rgba(34,211,238,0.8)]" animate={{ y: ["-100%", "800%"] }} transition={{ duration: 3, repeat: Infinity, ease: "linear" }} />
@@ -204,7 +204,7 @@ export default function TrainingIntelPage() {
               <div className="card-header relative z-10">
                 <span className="card-title text-cyan-400 flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                  AI Drill Recommendations
+                  Recommended Drills
                 </span>
               </div>
 

@@ -74,7 +74,7 @@ export default function ReportsPage() {
       targetId: 'spotlight-modal-container', // 🛡️ Targets the entire modal box
       tag: 'CLINICAL EXPORT',
       title: 'Detailed Case Telemetry',
-      script: 'Clicking an incident opens its full telemetry file. From here, you can review frame-by-frame metrics, request AI analysis, or export a detailed clinical PDF. Briefing complete.',
+      script: 'Clicking an incident opens its full telemetry file. From here, you can review frame-by-frame metrics, request automated analysis, or export a detailed clinical PDF. Briefing complete.',
       action: () => {
         // Automatically open the modal right before this step is spoken
         if (firstSessionId) setActivePatientId(firstSessionId);

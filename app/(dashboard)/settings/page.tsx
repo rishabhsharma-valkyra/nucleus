@@ -154,7 +154,7 @@ export default function SettingsPage() {
             <button className="btn" style={{ fontSize:11, padding:'4px 12px' }} onClick={requestNotifications}>Enable</button>
           )}
         </Row>
-        <Row label="Valkyra AI Voice Replies" sub="Speak the assistant's replies aloud (text-to-speech)">
+        <Row label="Valkyra Sentinel Voice Replies" sub="Speak the assistant's replies aloud (text-to-speech)">
           <Switch checked={voiceReplyEnabled} onChange={setVoiceReplyEnabled} />
         </Row>
       </Section>
@@ -178,7 +178,7 @@ export default function SettingsPage() {
         {[
           ['Backend',   'GCP Cloud Run'],
           ['Dataset',   'wound_ai.sessions'],
-          ['AI Model',  'Gemini Vision v3.1'],
+          ['Vision Model',  'Gemini Vision v3.1'],
           ['App Build', 'Valkyra Nucleus 1.0'],
         ].map(([k, v]) => (
           <Row key={k} label={k}>

@@ -82,7 +82,7 @@ export default function MortalityPage() {
       targetId: 'spotlight-mortality-metrics',
       tag: 'RISK ASSESSMENT',
       title: 'Global Mortality Metrics',
-      script: `Welcome to the Mortality Prediction module, ${firstName}. This dashboard tracks the average AI-assigned risk levels across all active field operations.`
+      script: `Welcome to the Mortality Prediction module, ${firstName}. This dashboard tracks the average model-assigned risk levels across all active field operations.`
     },
     {
       targetId: 'spotlight-mortality-active',
@@ -112,7 +112,7 @@ export default function MortalityPage() {
             <div className="metric-value" style={{ color:'var(--text)' }}>{isLoading ? '—' : active.length}</div>
           </div>
         </HoverTooltip>
-        <HoverTooltip tooltip="Average AI-modeled mortality risk across all active incidents, derived from each session's PWAT severity score.">
+        <HoverTooltip tooltip="Average model-estimated mortality risk across all active incidents, derived from each session's PWAT severity score.">
           <div className="metric-card">
             <div className="metric-label">Avg Predicted Risk</div>
             <div className="metric-value" style={{ color:riskColor(avgActiveRisk) }}>{active.length ? avgActiveRisk.toFixed(1)+'%' : '—'}</div>
@@ -132,7 +132,7 @@ export default function MortalityPage() {
         </HoverTooltip>
       </div>
 
-      <div className="section-hd"><div className="section-title">Active Incidents · AI-Predicted Risk</div><span className="badge badge-live">LIVE</span></div>
+      <div className="section-hd"><div className="section-title">Active Incidents · Model-Predicted Risk</div><span className="badge badge-live">LIVE</span></div>
       
       {/* 🛡️ TARGET 2: Active Incidents Table */}
       <div id="spotlight-mortality-active" className="card" style={{ marginBottom:20 }}>

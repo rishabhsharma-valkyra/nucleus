@@ -28,7 +28,7 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 15;
 const requestLog = new Map<string, number[]>();
 
-// Sentinel the model is told to read as "the link broke", so a failed
+// Marker the model is told to read as "the link broke", so a failed
 // fetch is never reported to the user as an empty database.
 const FETCH_FAILED = 'TELEMETRY_LINK_FAILED';
 
@@ -248,13 +248,13 @@ export async function POST(req: NextRequest) {
       : `Session ID '${targetSessionId}' is not one of this user's own records, so it cannot be shown to them.`;
   }
 
-  const systemPrompt = `You are the "Valkyra Oracle", an advanced tactical AI assistant managing the Valkyra Nucleus medical command center.
+  const systemPrompt = `You are the "Valkyra Sentinel", an advanced tactical assistant managing the Valkyra Nucleus medical command center.
 Your tone is professional and concise.
 You are currently speaking to: ${userName} (Role: ${userRole}). Address them appropriately based on their role.
 Current server time (UTC): ${new Date().toISOString()}
 
 DOMAIN DEFINITIONS (authoritative — never guess or substitute a different expansion for these terms):
-- PWAT = Photographic Wound Assessment Tool. It is a wound-severity SCORE on a 0-20 scale derived from AI analysis of the wound image — NOT "patient wait time", NOT a duration, and NOT measured in minutes or any other unit of time.
+- PWAT = Photographic Wound Assessment Tool. It is a wound-severity SCORE on a 0-20 scale derived from automated analysis of the wound image — NOT "patient wait time", NOT a duration, and NOT measured in minutes or any other unit of time.
   Scale bands: 0-4 Minor · 4-8 Delayed · 8-12 Urgent · 12-20 Critical. A HIGHER PWAT score means a MORE SEVERE wound.
   "pwat_stats" / "average", "minimum", "maximum" fields below are PWAT score values (unitless, 0-20), not durations.
 - Triage category (Red/Orange/Yellow/Green) is the field responder's severity classification, separate from but correlated with PWAT.
@@ -279,7 +279,7 @@ SYSTEM RULES:
 5. "${FETCH_FAILED}" means the backend telemetry link failed or timed out — a connection problem, NOT an empty database. In that case, say the live data link to the Nucleus backend is unavailable and suggest retrying; never claim there are no cases on record.
 6. "NO_SESSIONS_RECORDED" is the only value that means the database genuinely holds no sessions.`;
 
-  console.log('\n🧠 [GROQ] Initializing AI Stream (Model: groq/compound-mini)...');
+  console.log('\n🧠 [GROQ] Initializing response stream (Model: groq/compound-mini)...');
 
   const result = streamText({
     model: groq('groq/compound-mini'),
