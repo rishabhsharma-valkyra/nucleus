@@ -85,19 +85,19 @@ export default function EscalationsPage() {
       targetId: 'spotlight-escalation-metrics',
       tag: 'ESCALATION METRICS',
       title: 'Overall Call Rates',
-      script: `Welcome to the Escalations dashboard, ${firstName}. Here we track the frequency at which field operators override the AI to request human medical intervention.`
+      script: `Welcome to the Escalations dashboard, ${firstName}. Here we track the frequency at which field operators override the model to request human medical intervention.`
     },
     {
       targetId: 'spotlight-escalation-charts',
       tag: 'BEHAVIORAL ANALYSIS',
       title: 'Escalation Trends',
-      script: 'These modules break down doctor call rates by individual responder and specific injury types, helping identify where the AI is trusted least.'
+      script: 'These modules break down doctor call rates by individual responder and specific injury types, helping identify where the model is trusted least.'
     },
     {
       targetId: 'spotlight-escalation-gaps',
       tag: 'SYSTEM OPTIMIZATION',
-      title: 'AI Reinforcement Gaps',
-      script: 'The system automatically flags anomalous escalation patterns. These gaps indicate where our AI models require additional training data to improve field confidence. Briefing complete.'
+      title: 'Model Reinforcement Gaps',
+      script: 'The system automatically flags anomalous escalation patterns. These gaps indicate where our models require additional training data to improve field confidence. Briefing complete.'
     }
   ];
 
@@ -126,7 +126,7 @@ export default function EscalationsPage() {
           bg=""
         />
         <MetricCard
-          tooltip="The share of reviewed sessions this period where a responder escalated to a doctor instead of relying on the AI assessment."
+          tooltip="The share of reviewed sessions this period where a responder escalated to a doctor instead of relying on the automated assessment."
           label="Overall Escalation Rate"
           value={overallRate}
           decimals={1}
@@ -136,7 +136,7 @@ export default function EscalationsPage() {
           sub={overallRate >= 25 ? '<span class="delta-down">⚠ Elevated escalation rate</span>' : undefined}
         />
         <MetricCard
-          tooltip="The injury type with the highest doctor-escalation rate in this period — where field responders trust the AI least."
+          tooltip="The injury type with the highest doctor-escalation rate in this period — where field responders trust the automated assessment least."
           label="Highest-Rate Injury Type"
           value={worstType ? injuryLabel(worstType.type) : '—'}
           color=""
@@ -189,9 +189,9 @@ export default function EscalationsPage() {
         </div>
       </div>
 
-      {/* 🛡️ TARGET 3: AI Reinforcement Gaps (Wrapped in an ID container) */}
+      {/* 🛡️ TARGET 3: Model Reinforcement Gaps (Wrapped in an ID container) */}
       <div id="spotlight-escalation-gaps" className="pb-10">
-        <div className="section-hd"><div className="section-title">AI Reinforcement Gaps</div><span className="badge badge-warn">{gaps.length} FLAGGED</span></div>
+        <div className="section-hd"><div className="section-title">Model Reinforcement Gaps</div><span className="badge badge-warn">{gaps.length} FLAGGED</span></div>
         <div className="card">
           {gaps.length === 0 ? (
             <div style={{ padding:'16px 18px', fontSize:12, color:'var(--text3)', fontFamily:'var(--mono)' }}>✓ No responder/injury-type combination exceeds the {GAP_THRESHOLD}% escalation threshold in this period.</div>
@@ -201,7 +201,7 @@ export default function EscalationsPage() {
                 <div key={`${g.responder}-${g.type}`} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 18px', borderBottom: i < gaps.length-1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                   <span className="badge badge-warn">{g.rate.toFixed(0)}%</span>
                   <span style={{ fontSize:12, color:'var(--text2)' }}>
-                    <strong style={{ color:'var(--text)' }}>{g.responder}</strong> × {injuryLabel(g.type)} — {g.escalated} of {g.count} reviews escalated to a doctor. Consider additional AI training data for {injuryLabel(g.type).toLowerCase()} assessments.
+                    <strong style={{ color:'var(--text)' }}>{g.responder}</strong> × {injuryLabel(g.type)} — {g.escalated} of {g.count} reviews escalated to a doctor. Consider additional training data for {injuryLabel(g.type).toLowerCase()} assessments.
                   </span>
                 </div>
               ))}

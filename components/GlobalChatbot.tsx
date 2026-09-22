@@ -224,7 +224,7 @@ const threadsKey = (email: string) => `valkyra-chat-threads:${email}`;
 // cramped for the wide markdown tables the assistant returns. Width is now
 // dragged from the panel's left edge and remembered per browser.
 const DEFAULT_PANEL_WIDTH = 448; // what max-w-md resolved to
-const MIN_PANEL_WIDTH = 380;
+const MIN_PANEL_WIDTH = 440;
 const MAX_PANEL_WIDTH_RATIO = 0.95;
 const PANEL_WIDTH_KEY = 'valkyra-chat-panel-width';
 // Never wider than the viewport, and never below the minimum unless the
@@ -282,7 +282,7 @@ function greetingMessage(firstName: string) {
   return {
     id: '1',
     role: 'assistant',
-    parts: [{ type: 'text', text: `Valkyra AI initialized. Connected to live hospital telemetry. How can I assist, ${firstName}?` }],
+    parts: [{ type: 'text', text: `Valkyra Sentinel online. Connected to live hospital telemetry. How can I assist, ${firstName}?` }],
   };
 }
 
@@ -1031,7 +1031,7 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
       >
         <div
           className="relative w-28 h-28 pointer-events-auto flex items-center justify-center group"
-          onMouseEnter={() => { setIsHovered(true); setTooltipText("Click to deploy Valkyra AI."); setShowTooltip(true); setNoticeTrigger((n) => n + 1); }}
+          onMouseEnter={() => { setIsHovered(true); setTooltipText("Click to deploy Valkyra Sentinel."); setShowTooltip(true); setNoticeTrigger((n) => n + 1); }}
           onMouseLeave={() => { setIsHovered(false); setShowTooltip(false); }}
         >
           {/* 🛡️ NEW THOUGHT CLOUD BUBBLE */}
@@ -1154,10 +1154,13 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                     </svg>
                   </div>
                   <div>
-                    <h3 className="font-mono text-cyan-400 text-sm tracking-widest font-bold uppercase">Valkyra AI</h3>
+                    {/* nowrap only — never min-w-0 + truncate here: the five
+                        header buttons are fixed width, so a shrinkable title
+                        loses the flex contest and collapses to nothing. */}
+                    <h3 className="font-mono text-cyan-400 text-sm tracking-widest font-bold uppercase whitespace-nowrap">Valkyra Sentinel</h3>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <p className="font-mono text-[9px] text-slate-400 uppercase tracking-wider">Secure Uplink Active</p>
+                      <p className="font-mono text-[9px] text-slate-400 uppercase tracking-wider whitespace-nowrap">Secure Uplink Active</p>
                     </div>
                   </div>
                 </div>
@@ -1490,7 +1493,7 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder="Message Valkyra AI..."
+                      placeholder="Message Sentinel..."
                       className="flex-1 bg-transparent text-slate-200 placeholder-slate-500 focus:outline-none font-mono text-[13px] py-3.5 pl-12 pr-24 resize-none cyber-scrollbar min-h-[48px]"
                       rows={1}
                       style={{ maxHeight: '120px' }}

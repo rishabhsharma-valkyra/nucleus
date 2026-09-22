@@ -14,7 +14,7 @@ const TITLES: Record<string, string> = {
   '/reports':        'Incident Reports',
   '/responders':     'Responders',
   '/devices':        'AR Devices',
-  '/ai-performance': 'AI Performance',
+  '/ai-performance': 'Model Performance',
   '/heatmaps':       'Heatmaps',
   '/escalations':    'Escalation Frequency',
   '/mortality':      'Mortality Rate',

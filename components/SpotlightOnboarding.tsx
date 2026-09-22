@@ -26,7 +26,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     targetId: 'spotlight-bot',
     tag: 'VOICE INTELLIGENCE',
-    title: 'Valkyra AI Assistant',
+    title: 'Valkyra Sentinel',
     description: 'Voice-activated telemetry core. Click or speak anytime to query live hospital data.'
   }
 ];

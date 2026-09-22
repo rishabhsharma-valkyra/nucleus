@@ -219,7 +219,7 @@ export default function VoiceTour({ storageKey, steps, onTourEnd }: VoiceTourPro
     // 🛡️ HUMANIZATION TWEAKS
     // A slightly slower rate and lower pitch removes the "robotic rush"
     utterance.rate = 0.92;  // 1.0 is default. 0.92 is more conversational and deliberate.
-    utterance.pitch = 0.95; // 1.0 is default. 0.95 makes the AI sound calmer and less synthetic.
+    utterance.pitch = 0.95; // 1.0 is default. 0.95 makes the narration sound calmer and less synthetic.
 
     utterance.onstart = () => setIsSpeaking(true);
     

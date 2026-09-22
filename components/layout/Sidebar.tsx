@@ -61,7 +61,7 @@ const NAV: NavGroup[] = [
                 <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/>
               </svg>
             ) },
-      { href: '/ai-performance', label: 'AI Performance',      icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 5.5v3l1.5 1.5"/></svg> },
+      { href: '/ai-performance', label: 'Model Performance',      icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 5.5v3l1.5 1.5"/></svg> },
       { href: '/escalations',    label: 'Escalation Frequency', icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 2L14.5 13.5H1.5L8 2Z"/><path d="M8 6.5v3M8 11.5h.01"/></svg> },
       { href: '/mortality',      label: 'Mortality Rate',       icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 13.5S2 9.7 2 5.9A2.6 2.6 0 0 1 6.9 4.3 2.6 2.6 0 0 1 8 5.3 2.6 2.6 0 0 1 9.1 4.3 2.6 2.6 0 0 1 14 5.9C14 9.7 8 13.5 8 13.5Z"/><path d="M4 8h2l1-2 2 4 1-2h2"/></svg> },
       { href: '/heatmaps',       label: 'Heatmaps',            icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l3-4 3 3 2.5-4L14 2"/><path d="M2 14h12"/></svg> },

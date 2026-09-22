@@ -43,7 +43,7 @@ export default function SignInPage() {
             Command Center
           </h1>
           <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 36, lineHeight: 1.6 }}>
-            Wound AI Hospital Dashboard · Authorized Personnel Only
+            Valkyra Nucleus Command Dashboard · Authorized Personnel Only
           </p>
           <button
             className="btn btn-accent"

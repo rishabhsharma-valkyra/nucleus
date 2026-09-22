@@ -56,13 +56,13 @@ export default function AIPerformancePage() {
       targetId: 'spotlight-mortality',
       tag: 'PREDICTIVE MODELING',
       title: 'Mortality Prediction Engine',
-      script: `Welcome to AI Performance, ${firstName}. This module correlates the AI's real-time mortality risk predictions against actual post-incident outcomes to verify clinical accuracy.`
+      script: `Welcome to Model Performance, ${firstName}. This module correlates the model's real-time mortality risk predictions against actual post-incident outcomes to verify clinical accuracy.`
     },
     {
       targetId: 'spotlight-escalation',
       tag: 'SYSTEM AUTONOMY',
       title: 'Doctor Escalation Frequency',
-      script: 'This chart tracks human intervention rates by injury classification, highlighting exactly when field responders bypass the AI to call a licensed MD. Briefing complete.'
+      script: 'This chart tracks human intervention rates by injury classification, highlighting exactly when field responders bypass the model to call a licensed MD. Briefing complete.'
     }
   ];
 
@@ -73,9 +73,9 @@ export default function AIPerformancePage() {
         
         {/* 🛡️ TARGET 1: MORTALITY TRACKING DASHBOARD */}
         <motion.div id="spotlight-mortality" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -3, boxShadow: '0 8px 28px rgba(0,0,0,0.35)' }} transition={{ type: 'spring', stiffness: 260, damping: 22 }} className="card" style={{ padding: 24 }}>
-          <HoverTooltip tooltip="Compares the AI's predicted mortality risk at time of dispatch against the actual outcome recorded after the incident closed — the gap between the two lines is model error." style={{ marginBottom: 24, display: 'block' }}>
+          <HoverTooltip tooltip="Compares the model's predicted mortality risk at time of dispatch against the actual outcome recorded after the incident closed — the gap between the two lines is model error." style={{ marginBottom: 24, display: 'block' }}>
             <h2 style={{ fontSize: 14, fontFamily: 'var(--mono)', color: 'var(--cyan)', textTransform: 'uppercase', letterSpacing: 1 }}>Mortality Prediction Engine</h2>
-            <p style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 4 }}>Real-time AI Risk Prediction vs Post-Incident Actual Outcomes</p>
+            <p style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 4 }}>Real-time Risk Prediction vs Post-Incident Actual Outcomes</p>
           </HoverTooltip>
           
           <div className="h-[300px] w-full">
@@ -96,7 +96,7 @@ export default function AIPerformancePage() {
                 <YAxis stroke="rgba(255,255,255,0.1)" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10, fontFamily: 'monospace' }} domain={[0, 100]} axisLine={false} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontFamily: 'monospace', color: 'rgba(255,255,255,0.5)', paddingTop: 10 }} />
-                <Area type="monotone" dataKey="predictedRisk" name="AI Predicted Risk %" stroke="#22d3ee" fillOpacity={1} fill="url(#colorPredicted)" strokeWidth={2} />
+                <Area type="monotone" dataKey="predictedRisk" name="Predicted Risk %" stroke="#22d3ee" fillOpacity={1} fill="url(#colorPredicted)" strokeWidth={2} />
                 <Area type="monotone" dataKey="actualMortality" name="Actual Mortality %" stroke="#f87171" fillOpacity={1} fill="url(#colorActual)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
@@ -105,7 +105,7 @@ export default function AIPerformancePage() {
 
         {/* 🛡️ TARGET 2: ESCALATION FREQUENCY */}
         <motion.div id="spotlight-escalation" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} whileHover={{ y: -3, boxShadow: '0 8px 28px rgba(0,0,0,0.35)' }} className="card" style={{ padding: 24 }}>
-          <HoverTooltip tooltip="For each injury type, how often a field responder bypassed the AI's recommendation and called in a licensed doctor instead." style={{ marginBottom: 24, display: 'block' }}>
+          <HoverTooltip tooltip="For each injury type, how often a field responder bypassed the model's recommendation and called in a licensed doctor instead." style={{ marginBottom: 24, display: 'block' }}>
             <h2 style={{ fontSize: 14, fontFamily: 'var(--mono)', color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: 1 }}>Doctor Escalation Frequency</h2>
             <p style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 4 }}>Human Intervention Rate by Injury Classification</p>
           </HoverTooltip>
@@ -118,8 +118,8 @@ export default function AIPerformancePage() {
                 <YAxis type="category" dataKey="injury" stroke="rgba(255,255,255,0.1)" tick={{ fill: 'rgba(255,255,255,0.8)', fontSize: 10, fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
                 <Tooltip cursor={{ fill: 'rgba(255,255,255,0.02)' }} content={<CustomTooltip />} />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontFamily: 'monospace', color: 'rgba(255,255,255,0.5)', paddingTop: 10 }} />
-                <Bar dataKey="escalations" name="Bypassed AI (Doctor Called)" stackId="a" fill="#fbbf24" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="aiResolved" name="Resolved by AI Protocol" stackId="a" fill="#34d399" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="escalations" name="Bypassed Model (Doctor Called)" stackId="a" fill="#fbbf24" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="aiResolved" name="Resolved by Protocol" stackId="a" fill="#34d399" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

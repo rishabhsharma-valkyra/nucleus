@@ -5,7 +5,7 @@ import GlobalChatbot from '@/components/GlobalChatbot';
 
 export const metadata: Metadata = {
   title: 'Valkyra Nucleus — Command Center',
-  description: 'Wound AI Hospital Command Dashboard',
+  description: 'Valkyra Nucleus Command Dashboard',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -12,7 +12,7 @@ export const PERMISSIONS = {
   DEVICES_MANAGE: 'devices:manage',
   // AR Devices page — admin only, doctors don't need this view.
   DEVICES_VIEW: 'devices:view',
-  // AI Performance page — admin only, doctors don't need this view.
+  // Model Performance page — admin only, doctors don't need this view.
   AI_PERFORMANCE_VIEW: 'ai-performance:view',
   // Analytics page — admin only, doctors don't need this view.
   ANALYTICS_VIEW: 'analytics:view',
