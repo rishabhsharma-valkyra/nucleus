@@ -254,7 +254,11 @@ export default function OverviewPage() {
                   <span className="feed-time">{formatTime(s.created_at)}</span>
                 </div>
                 {/* 🛡️ THE FIX: Formatted the score here as well */}
-                <div className="feed-desc truncate">PWAT {Number(s.pwat_score).toFixed(1)} · {s.source_image || 'Unknown source'}</div>
+                <div className="feed-desc truncate">
+                  PWAT {Number(s.pwat_score).toFixed(1)} · {s.patient_name
+                    ? `${s.patient_name}${s.body_region ? ` · ${s.body_region}` : ''}`
+                    : (s.source_image || 'Unknown source')}
+                </div>
                 <div className="feed-outcome flex items-center gap-2">
                   <motion.div 
                     className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"

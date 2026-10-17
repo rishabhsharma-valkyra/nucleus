@@ -18,6 +18,14 @@ export interface GcsOutputs {
 
 export type TriageCategory = 'Red' | 'Orange' | 'Yellow' | 'Green' | 'Unclassified';
 
+// Where the headset was when the wound was scanned (GPS). All null for
+// sessions recorded before location capture, or with no GPS fix.
+export interface WoundLocation {
+  latitude: number | null;
+  longitude: number | null;
+  captured_at: string | null;
+}
+
 export interface Session {
   session_id: string;
   source_image: string;
@@ -27,6 +35,13 @@ export interface Session {
   created_at: string;
   wound_metrics: WoundMetrics;
   gcs_outputs: GcsOutputs;
+  // Patient → wound. From the headset's face login; null for older
+  // sessions or scans without a login.
+  patient_id: string | null;
+  patient_name: string | null;
+  // Where on the body the wound is (Gemini), e.g. "Left forearm"
+  body_region: string | null;
+  location: WoundLocation;
 }
 
 export interface TriageCount {

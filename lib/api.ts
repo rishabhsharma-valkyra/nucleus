@@ -19,6 +19,12 @@ export const fetchSummary = (): Promise<Summary> =>
 export const fetchSessions = (limit = 20, offset = 0): Promise<PatientsResponse> =>
   axios.get<PatientsResponse>(`/api/patients?limit=${limit}&offset=${offset}`).then(r => r.data);
 
+// Every wound session recorded for one patient (admin/doctor only).
+export const fetchPatientWounds = (patientId: string, limit = 100): Promise<PatientsResponse> =>
+  axios.get<PatientsResponse>(
+    `/api/patients?limit=${limit}&offset=0&patient_id=${encodeURIComponent(patientId)}`
+  ).then(r => r.data);
+
 export const fetchPatient = (id: string): Promise<Session> =>
   axios.get<Session>(`/api/patients/${encodeURIComponent(id)}`).then(r => r.data);
 
