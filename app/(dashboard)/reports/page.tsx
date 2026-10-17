@@ -36,7 +36,9 @@ export default function ReportsPage() {
   // --- Data Processing ---
   const filteredSessions = useMemo(() => {
     return sessions.filter((session: any) => {
-      const matchesSearch = session.session_id.toLowerCase().includes(searchQuery.toLowerCase());
+      const q = searchQuery.toLowerCase();
+      const matchesSearch = [session.session_id, session.patient_name, session.patient_id]
+        .some((v) => typeof v === 'string' && v.toLowerCase().includes(q));
       const matchesTriage = triageFilter === 'All' || session.triage_category === triageFilter;
       
       const sessionDate = parseTimestamp(session.created_at)?.getTime() ?? NaN;
@@ -99,20 +101,28 @@ export default function ReportsPage() {
   // --- EXPORT ENGINES ---
   const handleExportCSV = () => {
     const selectedData = filteredSessions.filter((s: any) => selectedIds.has(s.session_id));
-    const headers = ["Session ID", "Date", "Triage", "Frame", "PWAT Score", "Depth Severity", "Wound Area %"];
+    const headers = ["Session ID", "Date", "Triage", "Frame", "PWAT Score", "Depth Severity", "Wound Area %",
+                     "Patient ID", "Patient Name", "Body Region", "Latitude", "Longitude"];
     const rows: string[] = [];
-    
+    // Patient names / regions are free text — quote so commas can't shift columns
+    const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+
     selectedData.forEach((s: any) => {
       const frames = s.frames && s.frames.length > 0 ? s.frames : [ s.wound_metrics || {} ];
       frames.forEach((frame: any, fIdx: number) => {
         rows.push([
           s.session_id,
-          formatDate(s.created_at).replace(/,/g, ''), 
+          formatDate(s.created_at).replace(/,/g, ''),
           s.triage_category || 'Unknown',
           `Frame ${fIdx + 1}`,
           frame.pwat_score ?? s.pwat_score ?? 'N/A',
           frame.depth_severity ?? 'N/A',
-          frame.area_pct != null ? `${Number(frame.area_pct).toFixed(1)}%` : 'N/A'
+          frame.area_pct != null ? `${Number(frame.area_pct).toFixed(1)}%` : 'N/A',
+          csvCell(s.patient_id),
+          csvCell(s.patient_name),
+          csvCell(s.body_region),
+          s.location?.latitude ?? '',
+          s.location?.longitude ?? ''
         ].join(","));
       });
     });
@@ -161,8 +171,12 @@ export default function ReportsPage() {
       doc.setTextColor(80, 80, 80);
       doc.text(`Date Recorded: ${formatDate(s.created_at)}`, 14, yOffset + 6);
       doc.text(`Triage Level: ${s.triage_category || 'Unknown'}`, 14, yOffset + 12);
-      
-      yOffset += 20;
+      const gps = s.location?.latitude != null && s.location?.longitude != null
+        ? `${Number(s.location.latitude).toFixed(5)}, ${Number(s.location.longitude).toFixed(5)}`
+        : '—';
+      doc.text(`Patient: ${s.patient_name || '—'}  |  Body Region: ${s.body_region || '—'}  |  GPS: ${gps}`, 14, yOffset + 18);
+
+      yOffset += 26;
 
       const frames = s.frames && s.frames.length > 0 ? s.frames : [ s.wound_metrics || {} ];
       
@@ -306,6 +320,8 @@ export default function ReportsPage() {
                     </div>
                     <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
                       {formatDate(s.created_at)}
+                      {s.patient_name && <> · <span style={{ color: 'var(--text2)' }}>{s.patient_name}</span></>}
+                      {s.body_region && <> · {s.body_region}</>}
                     </div>
                   </div>
 

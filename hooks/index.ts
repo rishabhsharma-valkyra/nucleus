@@ -1,7 +1,7 @@
 'use client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
-import { fetchSummary, fetchSessions, fetchMySessions, fetchPatient, fetchIncidents, createIncident, resolveIncident, checkHealth } from '@/lib/api';
+import { fetchSummary, fetchSessions, fetchMySessions, fetchPatient, fetchPatientWounds, fetchIncidents, createIncident, resolveIncident, checkHealth } from '@/lib/api';
 import { queryKeys } from '@/lib/queryKeys';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { generateIncidentId } from '@/lib/utils';
@@ -100,6 +100,17 @@ export function usePatient(sessionId: string | null) {
     queryFn: () => fetchPatient(sessionId!),
     enabled: !!sessionId,
     staleTime: 5 * 60_000,
+  });
+}
+
+// All wound sessions for the patient behind the open case. Disabled when the
+// session has no patient (older sessions) or the caller can't list patients.
+export function usePatientWounds(patientId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.patientWounds(patientId ?? ''),
+    queryFn: () => fetchPatientWounds(patientId!),
+    enabled: enabled && !!patientId,
+    staleTime: 60_000,
   });
 }
 

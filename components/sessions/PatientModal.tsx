@@ -1,7 +1,8 @@
 'use client';
 
 import { useNucleusStore } from '@/store/useNucleusStore';
-import { usePatient } from '@/hooks';
+import { usePatient, usePatientWounds, usePermission } from '@/hooks';
+import { PERMISSIONS } from '@/lib/rbac';
 import { pwatColor, depthSeverityColor, formatDate } from '@/lib/utils';
 import { gcsImageUrl as gcsImg, gcsTextUrl as gcsTxt } from '@/lib/api';
 import { useState, useEffect } from 'react';
@@ -50,7 +51,11 @@ export default function PatientModal() {
   const activePatientId = useNucleusStore((s) => s.activePatientId);
   const setActivePatientId = useNucleusStore((s) => s.setActivePatientId);
   const { data: patient, isLoading } = usePatient(activePatientId);
-  
+  // Other wounds for the same patient — only for roles that may list all
+  // patients (the /api/patients route enforces this server-side too).
+  const canViewAllPatients = usePermission(PERMISSIONS.OPERATIONS_VIEW);
+  const { data: patientWounds } = usePatientWounds(patient?.patient_id, canViewAllPatients);
+
   const [lightbox, setLightbox] = useState<{ path: string; title: string } | null>(null);
   const [reportText, setReportText] = useState<string | null>(null);
   const [activeFrameIndex, setActiveFrameIndex] = useState(0);
@@ -106,6 +111,14 @@ export default function PatientModal() {
   const displayGemini = activeFrame?.gemini_text ?? s?.gemini_analysis ?? 'No analysis available.';
   const gcs: any = activeFrame?.gcs_outputs ?? s?.gcs_outputs ?? {};
 
+  // Patient → wound → location (null on sessions recorded before these fields)
+  const patientLabel = s?.patient_name || s?.patient_id || null;
+  const loc = s?.location ?? {};
+  const hasGps = loc.latitude != null && loc.longitude != null;
+  const gpsText = hasGps ? `${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}` : null;
+  const mapsUrl = hasGps ? `https://www.google.com/maps?q=${loc.latitude},${loc.longitude}` : null;
+  const otherWounds = (patientWounds?.sessions ?? []).filter((w: any) => w.session_id !== s?.session_id);
+
   const vitals = { hr: 98, bp: '134/88', rr: 18, spo2: 96 };
   
   const timelineEvents = [
@@ -125,6 +138,10 @@ export default function PatientModal() {
     const hospitalPayload = {
       incidentId: s?.session_id,
       timestamp: s?.created_at,
+      patientId: s?.patient_id,
+      patientName: s?.patient_name,
+      bodyRegion: s?.body_region,
+      location: hasGps ? { latitude: loc.latitude, longitude: loc.longitude } : null,
       triageLevel: displayTriage,
       severity: displayDepthSeverity,
       maxPwat: displayPwat,
@@ -188,8 +205,11 @@ export default function PatientModal() {
           
           <div className="modal-header">
             <div>
-              <div className="modal-title">{isLoading ? 'Loading...' : `Case: ${s?.session_id}`}</div>
+              <div className="modal-title">
+                {isLoading ? 'Loading...' : patientLabel ? `Patient: ${patientLabel}` : `Case: ${s?.session_id}`}
+              </div>
               <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 2 }}>
+                {patientLabel && s?.session_id ? `Case ${s.session_id} · ` : ''}
                 {s?.created_at ? formatDate(s.created_at) : ''}
               </div>
             </div>
@@ -235,6 +255,64 @@ export default function PatientModal() {
               <>
                 {activeTab === 'analytics' && (
                   <div>
+                    <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(34,211,238,0.04)', border: '1px solid rgba(34,211,238,0.18)', borderRadius: 8 }}>
+                      <div style={{ fontSize: 9, color: 'var(--cyan)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 10 }}>Patient & Wound Location</div>
+                      <div className="patient-detail" style={{ marginBottom: 0 }}>
+                        <div className="patient-field">
+                          <div className="patient-field-label">Patient</div>
+                          <div className="patient-field-value" style={{ fontSize: 13 }}>{s.patient_name || '—'}</div>
+                        </div>
+                        <div className="patient-field">
+                          <div className="patient-field-label">Patient ID</div>
+                          <div className="patient-field-value" style={{ fontSize: 11, fontFamily: 'var(--mono)', wordBreak: 'break-all' }}>{s.patient_id || '—'}</div>
+                        </div>
+                        <div className="patient-field">
+                          <div className="patient-field-label">Body Region</div>
+                          <div className="patient-field-value" style={{ fontSize: 13 }}>{s.body_region || '—'}</div>
+                        </div>
+                        <div className="patient-field">
+                          <div className="patient-field-label">Scan Location (GPS)</div>
+                          <div className="patient-field-value" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                            {mapsUrl ? (
+                              <a href={mapsUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--cyan)', textDecoration: 'underline' }}>
+                                {gpsText} ↗
+                              </a>
+                            ) : '—'}
+                            {loc.captured_at && (
+                              <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>fix at {formatDate(loc.captured_at)}</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {!patientLabel && !hasGps && !s.body_region && (
+                        <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 8 }}>
+                          Recorded before patient and location capture was enabled.
+                        </div>
+                      )}
+                      {otherWounds.length > 0 && (
+                        <div style={{ marginTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
+                          <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>
+                            Other wounds for this patient ({otherWounds.length})
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {otherWounds.map((w: any) => (
+                              <div
+                                key={w.session_id}
+                                onClick={() => setActivePatientId(w.session_id)}
+                                className="hover:bg-white/5"
+                                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontFamily: 'var(--mono)' }}
+                              >
+                                <span className={`triage-badge triage-${w.triage_category}`}>{w.triage_category}</span>
+                                <span style={{ color: 'var(--text)', flex: 1 }}>{w.body_region || 'Region not specified'}</span>
+                                <span style={{ color: pwatColor(w.pwat_score) }}>PWAT {w.pwat_score != null ? Number(w.pwat_score).toFixed(1) : '—'}</span>
+                                <span style={{ color: 'var(--text3)' }}>{formatDate(w.created_at)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {frames.length > 1 && (
                       <div style={{ marginBottom: 16, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8 }}>
                         <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>Captured Frames</div>
@@ -445,6 +523,9 @@ export default function PatientModal() {
               <h1 style={{ fontSize: 24, margin: '0 0 10px 0', color: '#fff' }}>VALKYRA CLINICAL INCIDENT REPORT</h1>
               <div style={{ fontSize: 14, color: '#9ca3af' }}>SESSION ID: {s.session_id}</div>
               <div style={{ fontSize: 14, color: '#9ca3af', marginTop: 5 }}>DATE: {formatDate(s.created_at)}</div>
+              <div style={{ fontSize: 14, color: '#9ca3af', marginTop: 5 }}>PATIENT: {s.patient_name || '—'}{s.patient_id ? ` (${s.patient_id})` : ''}</div>
+              <div style={{ fontSize: 14, color: '#9ca3af', marginTop: 5 }}>BODY REGION: {s.body_region || '—'}</div>
+              <div style={{ fontSize: 14, color: '#9ca3af', marginTop: 5 }}>SCAN LOCATION: {gpsText || '—'}</div>
             </div>
 
             {frames.map((frame: any, idx: number) => {
