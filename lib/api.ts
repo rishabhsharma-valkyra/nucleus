@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Summary, PatientsResponse, Session, IncidentsResponse, Incident } from '@/types';
+import { Summary, PatientsResponse, Session } from '@/types';
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE,
@@ -39,21 +39,6 @@ export const fetchMySessions = (limit = 20, offset = 0): Promise<PatientsRespons
 
 export const checkHealth = (): Promise<{ status: string }> =>
   api.get<{ status: string }>('/health').then(r => r.data);
-
-// ── Incidents ────────────────────────────────────────────────
-export const fetchIncidents = (): Promise<IncidentsResponse> =>
-  axios.get<IncidentsResponse>('/api/incidents').then(r => r.data);
-
-// Mutations route through Next.js API routes (same-origin), which check the
-// signed-in user's role server-side before forwarding to the backend. This
-// keeps permission checks enforceable even if someone bypasses the UI.
-export const createIncident = (
-  data: Omit<Incident, 'id' | 'created_at'>
-): Promise<{ success: boolean; id: string }> =>
-  axios.post('/api/incidents', data).then(r => r.data);
-
-export const resolveIncident = (id: string): Promise<{ success: boolean }> =>
-  axios.patch(`/api/incidents/${encodeURIComponent(id)}/resolve`).then(r => r.data);
 
 // ── GCS Proxy URLs (through Next.js API) ──────────────────────
 export const gcsImageUrl = (path: string): string =>

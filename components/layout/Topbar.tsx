@@ -2,9 +2,6 @@
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNucleusStore } from '@/store/useNucleusStore';
-import { usePermission } from '@/hooks';
-import { PERMISSIONS } from '@/lib/rbac';
 import AlertBell from '@/components/ui/AlertBell';
 
 const TITLES: Record<string, string> = {
@@ -28,8 +25,6 @@ export default function Topbar() {
   const [clock, setClock] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const qc = useQueryClient();
-  const setIncidentModalOpen = useNucleusStore((s) => s.setIncidentModalOpen);
-  const canCreateIncident = usePermission(PERMISSIONS.INCIDENTS_CREATE);
 
   // --- Clock Engine ---
   useEffect(() => {
@@ -92,11 +87,6 @@ export default function Topbar() {
           {isRefreshing ? 'SYNCING...' : 'REFRESH'}
         </button>
 
-        {canCreateIncident && (
-          <button className="btn btn-accent" onClick={() => setIncidentModalOpen(true)}>
-            + New Incident
-          </button>
-        )}
       </div>
     </div>
   );

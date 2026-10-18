@@ -18,10 +18,6 @@ interface NucleusStore {
   activeProfilePatientId: string | null;
   setActiveProfilePatientId: (id: string | null) => void;
 
-  // Incident modal
-  incidentModalOpen: boolean;
-  setIncidentModalOpen: (v: boolean) => void;
-
   // Filters
   triageFilter: 'all' | TriageCategory;
   setTriageFilter: (f: 'all' | TriageCategory) => void;
@@ -69,9 +65,6 @@ export const useNucleusStore = create<NucleusStore>()(
 
       activeProfilePatientId: null,
       setActiveProfilePatientId: (id) => set({ activeProfilePatientId: id }),
-
-      incidentModalOpen: false,
-      setIncidentModalOpen: (v) => set({ incidentModalOpen: v }),
 
       triageFilter: 'all',
       setTriageFilter: (f) => set({ triageFilter: f }),
