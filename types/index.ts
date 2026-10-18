@@ -26,6 +26,16 @@ export interface WoundLocation {
   captured_at: string | null;
 }
 
+// A headset's latest GPS fix (overwritten every ~10s while it runs)
+export interface LiveHeadset {
+  device_id: string;
+  session_id: string | null;
+  patient_id: string | null;
+  latitude: number;
+  longitude: number;
+  last_updated_unix: number | null;
+}
+
 export interface Session {
   session_id: string;
   source_image: string;

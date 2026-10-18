@@ -3,9 +3,11 @@
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { usePatient, usePatientWounds, usePermission } from '@/hooks';
 import { PERMISSIONS } from '@/lib/rbac';
-import { pwatColor, depthSeverityColor, formatDate } from '@/lib/utils';
+import { pwatColor, depthSeverityColor, formatDate, parseTimestamp } from '@/lib/utils';
 import { gcsImageUrl as gcsImg, gcsTextUrl as gcsTxt } from '@/lib/api';
-import { useState, useEffect } from 'react';
+import { patientHref, frameLabel } from '@/lib/patients';
+import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { MetricInfo, METRIC_DESCRIPTIONS as info } from '@/components/ui/MetricInfo';
 import html2canvas from 'html2canvas';
@@ -50,29 +52,44 @@ const PDF_IMAGES = [
 export default function PatientModal() {
   const activePatientId = useNucleusStore((s) => s.activePatientId);
   const setActivePatientId = useNucleusStore((s) => s.setActivePatientId);
-  const setActiveProfilePatientId = useNucleusStore((s) => s.setActiveProfilePatientId);
-  const { data: patient, isLoading } = usePatient(activePatientId);
-  // Other wounds for the same patient — only for roles that may list all
-  // patients (the /api/patients route enforces this server-side too).
+  const router = useRouter();
+  const { data: fetched, isLoading: fetchLoading } = usePatient(activePatientId);
+
+  // The patient's injuries (all of their sessions) drive the injury switcher.
+  // Only for roles that may list all patients (enforced server-side too).
+  // Remember the last patient id so switching injuries keeps the list (and
+  // the switcher) in place while the newly selected session loads.
   const canViewAllPatients = usePermission(PERMISSIONS.OPERATIONS_VIEW);
-  const { data: patientWounds } = usePatientWounds(patient?.patient_id, canViewAllPatients);
+  const lastPatientIdRef = useRef<string | null>(null);
+  if (fetched?.patient_id) lastPatientIdRef.current = fetched.patient_id;
+  const { data: patientWounds } = usePatientWounds(fetched?.patient_id ?? lastPatientIdRef.current, canViewAllPatients);
+
+  const woundList = patientWounds?.sessions ?? [];
+  // Ignore a remembered list that belongs to a different patient
+  const injuries = woundList.some((w) => w.session_id === activePatientId)
+    ? [...woundList].sort((a, b) => (parseTimestamp(b.created_at)?.getTime() ?? 0) - (parseTimestamp(a.created_at)?.getTime() ?? 0))
+    : [];
+  // Show the listed copy instantly while the full record loads — no flash
+  // back to a skeleton when switching between injuries.
+  const patient = fetched ?? injuries.find((w) => w.session_id === activePatientId);
+  const isLoading = !patient && fetchLoading;
 
   const [lightbox, setLightbox] = useState<{ path: string; title: string } | null>(null);
   const [reportText, setReportText] = useState<string | null>(null);
   const [activeFrameIndex, setActiveFrameIndex] = useState(0);
   
-  const [activeTab, setActiveTab] = useState<'analytics' | 'timeline' | 'pre-arrival'>('analytics');
-  const [isTransmitting, setIsTransmitting] = useState(false);
-  const [transmitStatus, setTransmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'timeline'>('analytics');
   const [isExporting, setIsExporting] = useState(false);
 
+  // Opening the window starts on Core Analytics; switching injuries inside
+  // it keeps the current tab and only resets the frame.
+  const prevCaseIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (activePatientId) {
-      setActiveTab('analytics');
+      if (!prevCaseIdRef.current) setActiveTab('analytics');
       setActiveFrameIndex(0);
-      setTransmitStatus('idle');
-      setIsTransmitting(false);
     }
+    prevCaseIdRef.current = activePatientId;
   }, [activePatientId]);
 
   if (!activePatientId) return null;
@@ -118,53 +135,34 @@ export default function PatientModal() {
   const hasGps = loc.latitude != null && loc.longitude != null;
   const gpsText = hasGps ? `${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}` : null;
   const mapsUrl = hasGps ? `https://www.google.com/maps?q=${loc.latitude},${loc.longitude}` : null;
-  const otherWounds = (patientWounds?.sessions ?? []).filter((w: any) => w.session_id !== s?.session_id);
-
-  // No real vitals source exists yet (the headset HUD values are simulated
-  // and never stored), so nothing is shown as a reading.
-  const vitals = null;
-
-  const timelineEvents = [
-    { time: '08:40:02 PM', e: 'Headset uplink stream configured by field unit.', color: 'rgba(255,255,255,0.5)' },
-    ...frames.map((f: any, idx: number) => ({
-      time: `08:40:0${5 + idx} PM`,
-      e: `Automated PWAT score for Frame ${f.frame_index ?? idx + 1}: ${f.pwat_score ?? '—'}`,
-      color: 'var(--amber)'
-    })),
-    { time: '08:40:13 PM', e: 'Operator deployed manual debridement.', color: 'var(--cyan)' }
-  ];
-
-  const handleHospitalTransmission = async () => {
-    setIsTransmitting(true);
-    setTransmitStatus('idle');
-    
-    const hospitalPayload = {
-      incidentId: s?.session_id,
-      timestamp: s?.created_at,
-      patientId: s?.patient_id,
-      patientName: s?.patient_name,
-      bodyRegion: s?.body_region,
-      location: hasGps ? { latitude: loc.latitude, longitude: loc.longitude } : null,
-      triageLevel: displayTriage,
-      severity: displayDepthSeverity,
-      maxPwat: displayPwat,
-      vitals: vitals,
-      eta: "9 Minutes",
-      framesAnalyzed: frames.length,
-      geminiAnalysis: displayGemini
-    };
-    
-    console.log("Transmitting Payload to Hospital API:", hospitalPayload);
-
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1800));
-      setTransmitStatus('success');
-    } catch {
-      setTransmitStatus('error');
-    } finally {
-      setIsTransmitting(false);
-    }
+  const openPatientRecord = (hash = '') => {
+    if (!s?.patient_id) return;
+    setActivePatientId(null);
+    router.push(patientHref(s.patient_id) + hash);
   };
+
+  // Built only from timestamps the pipeline actually records: each frame's
+  // capture time, the GPS fix, and when the case reached the database.
+  const fmtTime = (iso: string | null | undefined) => {
+    const d = parseTimestamp(iso ?? null);
+    return d ? d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : null;
+  };
+  const triageColor: Record<string, string> = { Red: 'var(--red)', Orange: 'var(--amber)', Yellow: '#facc15', Green: 'var(--green)' };
+  const timelineEvents = [
+    ...frames.map((f: any, idx: number) => ({
+      at: f.captured_at,
+      e: `${frameLabel(s?.body_region, idx)} captured — PWAT ${f.pwat_score ?? '—'}${f.triage ? ` (${f.triage})` : ''}${f.depth_severity ? `, ${f.depth_severity}` : ''}`,
+      color: triageColor[f.triage] ?? 'var(--amber)',
+    })),
+    ...(hasGps && loc.captured_at
+      ? [{ at: loc.captured_at, e: `Headset GPS fix ${gpsText}`, color: 'var(--cyan)' }]
+      : []),
+    ...(s?.created_at
+      ? [{ at: s.created_at, e: `Case recorded${s?.body_region ? ` — ${s.body_region}` : ''}, triage ${s?.triage_category ?? '—'}`, color: 'rgba(255,255,255,0.5)' }]
+      : []),
+  ]
+    .map((ev) => ({ ...ev, time: fmtTime(ev.at) ?? 'Time not recorded', t: parseTimestamp(ev.at ?? null)?.getTime() ?? Infinity }))
+    .sort((a, b) => a.t - b.t);
 
   const handlePdfExport = async () => {
     setIsExporting(true);
@@ -222,11 +220,42 @@ export default function PatientModal() {
             </div>
           </div>
 
+          {/* Injury switcher — every wound of this patient, by body region */}
+          {injuries.length > 1 && (
+            <div style={{ padding: '10px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', flexShrink: 0 }}>
+                Injuries ({injuries.length})
+              </div>
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+                {injuries.map((w: any) => {
+                  const active = w.session_id === activePatientId;
+                  return (
+                    <button
+                      key={w.session_id}
+                      onClick={() => setActivePatientId(w.session_id)}
+                      title={`${w.body_region || 'Region not specified'} · ${formatDate(w.created_at)} · ${w.triage_category}`}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 8, whiteSpace: 'nowrap',
+                        cursor: 'pointer', transition: 'all 0.2s', fontSize: 11,
+                        border: active ? '1px solid rgba(34,211,238,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                        background: active ? 'rgba(34,211,238,0.08)' : 'transparent',
+                        color: active ? 'var(--cyan)' : 'var(--text2)',
+                      }}
+                    >
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: triageColor[w.triage_category] ?? 'var(--text3)', flexShrink: 0 }} />
+                      <span style={{ fontWeight: 600 }}>{w.body_region || 'Region not specified'}</span>
+                      <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{formatDate(w.created_at)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: 20, padding: '0 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
             {[
               { id: 'analytics', label: 'Core Analytics' },
               { id: 'timeline', label: 'Timeline & Telemetry' },
-              { id: 'pre-arrival', label: 'Hospital Pre-Arrival Desk' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -266,9 +295,9 @@ export default function PatientModal() {
                           <div className="patient-field-value" style={{ fontSize: 13 }}>
                             {s.patient_id && canViewAllPatients ? (
                               <span
-                                onClick={() => setActiveProfilePatientId(s.patient_id)}
+                                onClick={() => openPatientRecord()}
                                 style={{ color: 'var(--cyan)', textDecoration: 'underline', cursor: 'pointer' }}
-                                title="Open patient profile — all incidents"
+                                title="Open patient record — all injuries"
                               >
                                 {s.patient_name || s.patient_id}
                               </span>
@@ -302,33 +331,11 @@ export default function PatientModal() {
                           Recorded before patient and location capture was enabled.
                         </div>
                       )}
-                      {otherWounds.length > 0 && (
-                        <div style={{ marginTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
-                          <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>
-                            Other wounds for this patient ({otherWounds.length})
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {otherWounds.map((w: any) => (
-                              <div
-                                key={w.session_id}
-                                onClick={() => setActivePatientId(w.session_id)}
-                                className="hover:bg-white/5"
-                                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontFamily: 'var(--mono)' }}
-                              >
-                                <span className={`triage-badge triage-${w.triage_category}`}>{w.triage_category}</span>
-                                <span style={{ color: 'var(--text)', flex: 1 }}>{w.body_region || 'Region not specified'}</span>
-                                <span style={{ color: pwatColor(w.pwat_score) }}>PWAT {w.pwat_score != null ? Number(w.pwat_score).toFixed(1) : '—'}</span>
-                                <span style={{ color: 'var(--text3)' }}>{formatDate(w.created_at)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
 
                     {frames.length > 1 && (
                       <div style={{ marginBottom: 16, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8 }}>
-                        <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>Captured Frames</div>
+                        <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>Captured Frames — {s.body_region || 'this wound'}</div>
                         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
                           {frames.map((f: any, i: number) => (
                             <button
@@ -347,7 +354,10 @@ export default function PatientModal() {
                                 whiteSpace: 'nowrap'
                               }}
                             >
-                              Frame {f.frame_index ?? i + 1}
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                {f.triage && <span style={{ width: 6, height: 6, borderRadius: '50%', background: triageColor[f.triage] ?? 'var(--text3)' }} />}
+                                {frameLabel(s.body_region, i)}
+                              </span>
                             </button>
                           ))}
                         </div>
@@ -386,7 +396,7 @@ export default function PatientModal() {
                     </div>
 
                     <div style={{ marginBottom: 14, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8 }}>
-                      <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>Source Image (Frame {activeFrameIndex + 1})</div>
+                      <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>Source Image ({frameLabel(s.body_region, activeFrameIndex)})</div>
                       <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text2)', wordBreak: 'break-all' }}>{displaySourceImage}</div>
                     </div>
 
@@ -434,33 +444,6 @@ export default function PatientModal() {
                   </div>
                 )}
 
-                {activeTab === 'pre-arrival' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                    <div style={{ background: 'rgba(34,211,238,0.05)', border: '1px solid rgba(34,211,238,0.2)', padding: 20, borderRadius: 8 }}>
-                      <div style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'var(--mono)', letterSpacing: 2, fontWeight: 700, marginBottom: 12 }}>STRUCTURED PRE-ARRIVAL MANIFEST</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, color: 'var(--text2)', fontFamily: 'var(--mono)' }}>
-                        <div><strong style={{ color: 'var(--text)' }}>Injury Class:</strong> Tactical Trauma Wounding Registry</div>
-                        <div><strong style={{ color: 'var(--text)' }}>Severity Level:</strong> Critical Triage // {displayDepthSeverity}</div>
-                        <div><strong style={{ color: 'var(--text)' }}>Calculated ETA:</strong> 09 Minutes Remaining to Trauma Bay</div>
-                      </div>
-                    </div>
-
-                    <button 
-                      onClick={handleHospitalTransmission}
-                      disabled={isTransmitting}
-                      style={{
-                        padding: '14px', borderRadius: 8, border: 'none', cursor: isTransmitting ? 'not-allowed' : 'pointer',
-                        fontSize: 12, fontWeight: 700, fontFamily: 'var(--mono)',
-                        background: transmitStatus === 'success' ? 'var(--green)' : 'var(--cyan)',
-                        color: 'black', transition: 'all 0.2s ease'
-                      }}
-                    >
-                      {isTransmitting ? 'TRANSMITTING ENCRYPTED PAYLOAD...' : 
-                        transmitStatus === 'success' ? '✓ TRANSMITTED SECURELY TO HOSPITAL' : 
-                        'TRANSMIT PRE-ARRIVAL PAYLOAD'}
-                    </button>
-                  </div>
-                )}
               </>
             ) : (
               <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 12 }}>Failed to load patient record.</div>
@@ -478,6 +461,15 @@ export default function PatientModal() {
                >
                  {isExporting ? 'Generating...' : '📄 Export Full PDF'}
                </button>
+               {s?.patient_id && canViewAllPatients && (
+                 <button
+                   className="btn"
+                   onClick={() => openPatientRecord('#hospital-handoff')}
+                   title="Hospital pre-arrival is prepared per patient, covering all current injuries"
+                 >
+                   🏥 Hospital handoff →
+                 </button>
+               )}
             </div>
             
             {s && gcs.gemini_report && (
@@ -540,7 +532,7 @@ export default function PatientModal() {
               return (
                 <div key={idx} style={{ marginBottom: 40, background: '#0f172a', padding: 20, borderRadius: 10, border: '1px solid #1e293b', pageBreakInside: 'avoid' }}>
                   <h2 style={{ fontSize: 18, borderBottom: '1px solid #334155', paddingBottom: 10, color: '#38bdf8' }}>
-                    FRAME {frame.frame_index ?? idx + 1}
+                    {frameLabel(s.body_region, idx).toUpperCase()}
                   </h2>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 15, marginTop: 15 }}>
                     <div style={{ background: '#020617', padding: 15, borderRadius: 8 }}>

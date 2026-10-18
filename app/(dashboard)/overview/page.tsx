@@ -171,7 +171,8 @@ export default function OverviewPage() {
             ) : sessions.filter((s: any) => s.pwat_score > 0).slice(0, 6).map((s: any, idx: number) => {
               const pct = Math.round((s.pwat_score / 20) * 100);
               const col = pwatColor(s.pwat_score);
-              const shortId = s.session_id.length > 18 ? s.session_id.slice(0,18)+'…' : s.session_id;
+              const fullLabel = s.patient_name ? `${s.patient_name}${s.body_region ? ` · ${s.body_region}` : ''}` : s.session_id;
+              const shortId = fullLabel.length > 18 ? fullLabel.slice(0,18)+'…' : fullLabel;
               return (
                 <motion.div 
                   key={s.session_id} 
@@ -179,7 +180,7 @@ export default function OverviewPage() {
                   className="injury-row hover:bg-white/5 transition-colors pr-4" // 🛡️ Added pr-4 to prevent overlap
                   style={{ cursor: 'pointer' }} onClick={() => setActivePatientId(s.session_id)}
                 >
-                  <div className="inj-type" title={s.session_id}>{shortId}</div>
+                  <div className="inj-type" title={fullLabel}>{shortId}</div>
                   <div className="inj-track">
                     <div className="inj-fill" style={{ width: `${pct}%`, background: col, boxShadow: `0 0 8px ${col}`, position: 'relative', overflow: 'hidden' }}>
                        <motion.div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-white/30 to-transparent" animate={{ x: ["-100%", "300%"] }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear", delay: idx * 0.2 }} />

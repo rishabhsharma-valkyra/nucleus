@@ -58,7 +58,8 @@ export default function CriticalAlertWatcher() {
 
     newOnes.forEach((s: any) => {
       seenRef.current!.add(s.session_id);
-      const message = `New Red-triage case · PWAT ${Number(s.pwat_score).toFixed(1)} · ${s.session_id.slice(0, 8)}…`;
+      const who = s.patient_name || s.patient_id;
+      const message = `New Red-triage case · PWAT ${Number(s.pwat_score).toFixed(1)} · ${who ? `${who}${s.body_region ? ` · ${s.body_region}` : ''}` : `${s.session_id.slice(0, 8)}…`}`;
 
       addToast({ type: 'alert', message });
       addCriticalAlert({

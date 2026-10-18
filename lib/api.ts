@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Summary, PatientsResponse, Session } from '@/types';
+import { Summary, PatientsResponse, Session, LiveHeadset } from '@/types';
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE,
@@ -37,7 +37,11 @@ export const fetchPatient = (id: string): Promise<Session> =>
 export const fetchMySessions = (limit = 20, offset = 0): Promise<PatientsResponse> =>
   axios.get<PatientsResponse>(`/api/my-sessions?limit=${limit}&offset=${offset}`).then(r => r.data);
 
-export const checkHealth = (): Promise<{ status: string }> =>
+// Each headset's latest GPS fix (from /update_location → GCS live_tracking)
+export const fetchLiveLocations = (): Promise<{ headsets: LiveHeadset[] }> =>
+  axios.get('/api/live-locations').then(r => r.data);
+
+export const checkHealth =(): Promise<{ status: string }> =>
   api.get<{ status: string }>('/health').then(r => r.data);
 
 // ── GCS Proxy URLs (through Next.js API) ──────────────────────

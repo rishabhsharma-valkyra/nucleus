@@ -1,7 +1,7 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
-import { fetchSummary, fetchSessions, fetchMySessions, fetchPatient, fetchPatientWounds, fetchPatientPhoto, checkHealth } from '@/lib/api';
+import { fetchSummary, fetchSessions, fetchMySessions, fetchPatient, fetchPatientWounds, fetchPatientPhoto, fetchLiveLocations, checkHealth } from '@/lib/api';
 import { queryKeys } from '@/lib/queryKeys';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { Permission, hasPermission } from '@/lib/rbac';
@@ -118,6 +118,16 @@ export function usePatientPhoto(patientId: string | null | undefined, enabled = 
     queryFn: () => fetchPatientPhoto(patientId!),
     enabled: enabled && !!patientId,
     staleTime: 10 * 60_000,
+  });
+}
+
+export function useLiveLocations(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.liveLocations,
+    queryFn: fetchLiveLocations,
+    enabled,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
   });
 }
 

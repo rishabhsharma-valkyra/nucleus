@@ -28,6 +28,17 @@ const TRIAGE_RANK: Record<string, number> = { Red: 4, Orange: 3, Yellow: 2, Gree
 
 const time = (s: Session) => parseTimestamp(s.created_at)?.getTime() ?? 0;
 
+// Route id for the bucket of scans that carry no patient (recorded before
+// face login was linked). Not a valid face-login id.
+export const UNIDENTIFIED_ID = '__unidentified__';
+
+export const patientHref = (patientId: string) => `/incidents/${encodeURIComponent(patientId)}`;
+
+// Frames are repeated captures of one wound — label them by its body region.
+export function frameLabel(bodyRegion: string | null | undefined, index: number): string {
+  return `${bodyRegion || 'Frame'} · ${index + 1}`;
+}
+
 export function hasGps(loc: WoundLocation | null | undefined): loc is WoundLocation {
   return !!loc && loc.latitude != null && loc.longitude != null;
 }

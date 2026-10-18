@@ -13,11 +13,6 @@ interface NucleusStore {
   activePatientId: string | null;
   setActivePatientId: (id: string | null) => void;
 
-  // Patient profile modal (keyed by patient_id, not session) — all of one
-  // patient's incidents
-  activeProfilePatientId: string | null;
-  setActiveProfilePatientId: (id: string | null) => void;
-
   // Filters
   triageFilter: 'all' | TriageCategory;
   setTriageFilter: (f: 'all' | TriageCategory) => void;
@@ -62,9 +57,6 @@ export const useNucleusStore = create<NucleusStore>()(
 
       activePatientId: null,
       setActivePatientId: (id) => set({ activePatientId: id }),
-
-      activeProfilePatientId: null,
-      setActiveProfilePatientId: (id) => set({ activeProfilePatientId: id }),
 
       triageFilter: 'all',
       setTriageFilter: (f) => set({ triageFilter: f }),
