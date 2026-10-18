@@ -4,6 +4,7 @@ import { useMySessions } from '@/hooks';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { pwatColor, triageClass, formatDate, depthSeverityColor } from '@/lib/utils';
 import { MetricInfo, METRIC_DESCRIPTIONS as info } from '@/components/ui/MetricInfo';
+import { PATIENT_ACCESS_ENABLED, PATIENT_ACCESS_DISABLED_MESSAGE } from '@/lib/patientAccess';
 
 // 🛡️ IMPORTS FOR THE PERSONALIZED VOICE TOUR
 import { useSession } from 'next-auth/react';
@@ -13,7 +14,7 @@ import VoiceTour, { TourStep } from '@/components/VoiceTour';
 // user (enforced server-side in app/api/my-sessions/route.ts, not just
 // filtered here).
 export default function MySessionsPage() {
-  const { data, isLoading } = useMySessions(50, 0);
+  const { data, isLoading, isError } = useMySessions(50, 0);
   const setActivePatientId = useNucleusStore((s) => s.setActivePatientId);
   const [search, setSearch] = useState('');
 
@@ -79,6 +80,10 @@ export default function MySessionsPage() {
         {isLoading ? (
           <div style={{ padding: '20px 18px' }}>
             {[...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 14, marginBottom: 10 }} />)}
+          </div>
+        ) : !PATIENT_ACCESS_ENABLED || isError ? (
+          <div style={{ padding: '20px 18px', textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 12 }}>
+            {PATIENT_ACCESS_ENABLED ? 'Could not load your sessions.' : PATIENT_ACCESS_DISABLED_MESSAGE}
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ padding: '20px 18px', textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 12 }}>

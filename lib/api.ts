@@ -25,6 +25,10 @@ export const fetchPatientWounds = (patientId: string, limit = 100): Promise<Pati
     `/api/patients?limit=${limit}&offset=0&patient_id=${encodeURIComponent(patientId)}`
   ).then(r => r.data);
 
+// gs:// path of the patient's registered face photo (null if none).
+export const fetchPatientPhoto = (patientId: string): Promise<{ patient_id: string; photo: string | null }> =>
+  axios.get(`/api/patient-photo?patient_id=${encodeURIComponent(patientId)}`).then(r => r.data);
+
 export const fetchPatient = (id: string): Promise<Session> =>
   axios.get<Session>(`/api/patients/${encodeURIComponent(id)}`).then(r => r.data);
 

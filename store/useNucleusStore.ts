@@ -13,6 +13,11 @@ interface NucleusStore {
   activePatientId: string | null;
   setActivePatientId: (id: string | null) => void;
 
+  // Patient profile modal (keyed by patient_id, not session) — all of one
+  // patient's incidents
+  activeProfilePatientId: string | null;
+  setActiveProfilePatientId: (id: string | null) => void;
+
   // Incident modal
   incidentModalOpen: boolean;
   setIncidentModalOpen: (v: boolean) => void;
@@ -61,6 +66,9 @@ export const useNucleusStore = create<NucleusStore>()(
 
       activePatientId: null,
       setActivePatientId: (id) => set({ activePatientId: id }),
+
+      activeProfilePatientId: null,
+      setActiveProfilePatientId: (id) => set({ activeProfilePatientId: id }),
 
       incidentModalOpen: false,
       setIncidentModalOpen: (v) => set({ incidentModalOpen: v }),

@@ -50,6 +50,7 @@ const PDF_IMAGES = [
 export default function PatientModal() {
   const activePatientId = useNucleusStore((s) => s.activePatientId);
   const setActivePatientId = useNucleusStore((s) => s.setActivePatientId);
+  const setActiveProfilePatientId = useNucleusStore((s) => s.setActiveProfilePatientId);
   const { data: patient, isLoading } = usePatient(activePatientId);
   // Other wounds for the same patient — only for roles that may list all
   // patients (the /api/patients route enforces this server-side too).
@@ -119,8 +120,10 @@ export default function PatientModal() {
   const mapsUrl = hasGps ? `https://www.google.com/maps?q=${loc.latitude},${loc.longitude}` : null;
   const otherWounds = (patientWounds?.sessions ?? []).filter((w: any) => w.session_id !== s?.session_id);
 
-  const vitals = { hr: 98, bp: '134/88', rr: 18, spo2: 96 };
-  
+  // No real vitals source exists yet (the headset HUD values are simulated
+  // and never stored), so nothing is shown as a reading.
+  const vitals = null;
+
   const timelineEvents = [
     { time: '08:40:02 PM', e: 'Headset uplink stream configured by field unit.', color: 'rgba(255,255,255,0.5)' },
     ...frames.map((f: any, idx: number) => ({
@@ -260,7 +263,17 @@ export default function PatientModal() {
                       <div className="patient-detail" style={{ marginBottom: 0 }}>
                         <div className="patient-field">
                           <div className="patient-field-label">Patient</div>
-                          <div className="patient-field-value" style={{ fontSize: 13 }}>{s.patient_name || '—'}</div>
+                          <div className="patient-field-value" style={{ fontSize: 13 }}>
+                            {s.patient_id && canViewAllPatients ? (
+                              <span
+                                onClick={() => setActiveProfilePatientId(s.patient_id)}
+                                style={{ color: 'var(--cyan)', textDecoration: 'underline', cursor: 'pointer' }}
+                                title="Open patient profile — all incidents"
+                              >
+                                {s.patient_name || s.patient_id}
+                              </span>
+                            ) : (s.patient_name || '—')}
+                          </div>
                         </div>
                         <div className="patient-field">
                           <div className="patient-field-label">Patient ID</div>
@@ -400,19 +413,9 @@ export default function PatientModal() {
                 {activeTab === 'timeline' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                     <div>
-                      <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 12 }}>Live Telemetry Vitals</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-                        {[
-                          { l: 'HEART RATE', v: `${vitals.hr} BPM`, c: 'var(--red)' },
-                          { l: 'BLOOD PRESSURE', v: vitals.bp, c: 'var(--cyan)' },
-                          { l: 'RESPIRATORY RATE', v: `${vitals.rr} /min`, c: 'var(--amber)' },
-                          { l: 'OXYGEN SAT.', v: `${vitals.spo2}%`, c: 'var(--green)' }
-                        ].map((v) => (
-                          <div key={v.l} style={{ background: 'rgba(255,255,255,0.02)', borderLeft: `2px solid ${v.c}`, padding: 12, borderRadius: '0 8px 8px 0' }}>
-                            <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>{v.l}</div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginTop: 4 }}>{v.v}</div>
-                          </div>
-                        ))}
+                      <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 12 }}>Vitals</div>
+                      <div style={{ padding: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)' }}>
+                        Not captured yet — the headset does not record real vitals, so none are stored for this case.
                       </div>
                     </div>
 

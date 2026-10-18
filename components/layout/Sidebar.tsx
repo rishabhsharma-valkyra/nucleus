@@ -41,7 +41,7 @@ const NAV: NavGroup[] = [
     section: 'Command',
     items: [
       { href: '/overview',   label: 'Overview',        icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg> },
-      { href: '/incidents',  label: 'Live Incidents',  icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>, badge: false },
+      { href: '/incidents',  label: 'Patient Incidents',  icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>, badge: false },
       { href: '/analytics',  label: 'Analytics',       icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 13L5 9l3 2.5 3-4.5 3-3"/></svg> },
     ],
   },

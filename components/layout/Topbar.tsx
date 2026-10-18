@@ -9,7 +9,7 @@ import AlertBell from '@/components/ui/AlertBell';
 
 const TITLES: Record<string, string> = {
   '/overview':       'Command Overview',
-  '/incidents':      'Live Incidents',
+  '/incidents':      'Patient Incidents',
   '/analytics':      'Analytics',
   '/reports':        'Incident Reports',
   '/responders':     'Responders',
