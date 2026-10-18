@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { forwardToBackend } from '@/lib/backend';
 import { getEffectiveRole } from '@/lib/serverRole';
+import { PATIENT_ACCESS_ENABLED, PATIENT_ACCESS_DISABLED_MESSAGE } from '@/lib/patientAccess';
 
 // Single session lookup. Admin/doctor can open any session; a patient can
 // only open their own — enforced here (not just hidden in the UI) by
@@ -17,6 +18,9 @@ export async function GET(
   if (!session) return new Response('Unauthorized', { status: 401 });
 
   const isPrivileged = hasPermission(getEffectiveRole(session), PERMISSIONS.OPERATIONS_VIEW);
+  if (!isPrivileged && !PATIENT_ACCESS_ENABLED) {
+    return Response.json({ error: PATIENT_ACCESS_DISABLED_MESSAGE }, { status: 403 });
+  }
   const qs = isPrivileged
     ? ''
     : `?patientEmail=${encodeURIComponent(session.user.email ?? '')}`;

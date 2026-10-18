@@ -25,6 +25,7 @@ const rowVariant: Variants = {
 export default function ReportsPage() {
   const { data: sessionsData, isLoading } = useAllSessions();
   const setActivePatientId = useNucleusStore((s) => s.setActivePatientId);
+  const setActiveProfilePatientId = useNucleusStore((s) => s.setActiveProfilePatientId);
   const sessions = sessionsData?.sessions ?? [];
 
   // --- Filter & Selection States ---
@@ -320,7 +321,11 @@ export default function ReportsPage() {
                     </div>
                     <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
                       {formatDate(s.created_at)}
-                      {s.patient_name && <> · <span style={{ color: 'var(--text2)' }}>{s.patient_name}</span></>}
+                      {s.patient_name && <> · <span
+                        style={{ color: 'var(--cyan)', textDecoration: 'underline', cursor: 'pointer' }}
+                        title="Open patient profile — all incidents"
+                        onClick={(e) => { e.stopPropagation(); setActiveProfilePatientId(s.patient_id); }}
+                      >{s.patient_name}</span></>}
                       {s.body_region && <> · {s.body_region}</>}
                     </div>
                   </div>

@@ -1,54 +1,51 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useAllSessions } from '@/hooks';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useAllSessions, usePatientPhoto } from '@/hooks';
 import { motion, AnimatePresence } from 'framer-motion';
-import { pwatColor, parseTimestamp } from '@/lib/utils';
+import { formatDate, pwatColor } from '@/lib/utils';
 import { sessionStatus } from '@/lib/sessionsAsIncidents';
+import { gcsImageUrl } from '@/lib/api';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { HoverTooltip } from '@/components/ui/MetricCard';
+import { groupSessionsByPatient, hasGps, gpsText, PatientRecord } from '@/lib/patients';
 
 // 🛡️ IMPORTS FOR THE PERSONALIZED VOICE TOUR
 import { useSession } from 'next-auth/react';
 import VoiceTour, { TourStep } from '@/components/VoiceTour';
 
-// --- Live Mission Clock Component ---
-function MissionClock({ startTime }: { startTime: string }) {
-  const [elapsed, setElapsed] = useState('00:00:00');
-
-  useEffect(() => {
-    const start = parseTimestamp(startTime)?.getTime();
-    // No usable start time — show a dash rather than ticking "NaN:NaN:NaN".
-    if (start === undefined) {
-      setElapsed('--:--:--');
-      return;
-    }
-
-    const update = () => {
-      const diff = Math.max(0, Math.floor((Date.now() - start) / 1000));
-      const h = Math.floor(diff / 3600).toString().padStart(2, '0');
-      const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
-      const s = (diff % 60).toString().padStart(2, '0');
-      setElapsed(`${h}:${m}:${s}`);
-    };
-
-    update();
-    const int = setInterval(update, 1000);
-    return () => clearInterval(int);
-  }, [startTime]);
-
-  return <span className="font-mono text-[11px] tracking-widest">{elapsed}</span>;
+function PatientPhoto({ patientId, name }: { patientId: string; name: string }) {
+  const { data } = usePatientPhoto(patientId);
+  return (
+    <div className="w-14 h-14 shrink-0 rounded-lg overflow-hidden bg-black border border-white/10 flex items-center justify-center">
+      {data?.photo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={gcsImageUrl(data.photo)} alt={name} className="w-full h-full object-cover" />
+      ) : (
+        <span className="text-lg font-bold text-slate-500">{name.charAt(0).toUpperCase()}</span>
+      )}
+    </div>
+  );
 }
 
+// Incidents, grouped by patient: each patient is one card, and every wound
+// scan of that patient (today, ten days later, …) is an incident inside it.
+// Clicking a card opens the patient profile with all of their incidents.
 export default function IncidentsPage() {
-  const { data: sessionsData } = useAllSessions();
-  const setActivePatientId = useNucleusStore((s) => s.setActivePatientId);
-  const sessions = sessionsData?.sessions ?? [];
+  const { data: sessionsData, isLoading } = useAllSessions();
+  const setActiveProfilePatientId = useNucleusStore((s) => s.setActiveProfilePatientId);
+  const [search, setSearch] = useState('');
 
-  // "Incidents" here are recent sessions (last hour) treated as active field
-  // operations — there's no dedicated incidents feed yet. See lib/sessionsAsIncidents.ts.
-  const activeIncidents = sessions
-    .filter((s: any) => sessionStatus(s.created_at) === 'Active')
-    .sort((a: any, b: any) => (parseTimestamp(b.created_at)?.getTime() ?? 0) - (parseTimestamp(a.created_at)?.getTime() ?? 0));
+  const { patients, unidentifiedCount } = useMemo(
+    () => groupSessionsByPatient(sessionsData?.sessions ?? []),
+    [sessionsData]
+  );
+
+  const q = search.toLowerCase();
+  const visible = patients.filter(
+    (p) => !q || p.patient_id.toLowerCase().includes(q) || (p.patient_name ?? '').toLowerCase().includes(q)
+  );
+  const activeCount = patients.filter((p) => sessionStatus(p.last_seen) === 'Active').length;
 
   // 🛡️ EXTRACT USER NAME FOR PERSONALIZED GREETING
   const { data: session } = useSession();
@@ -58,105 +55,119 @@ export default function IncidentsPage() {
   const PAGE_STEPS: TourStep[] = [
     {
       targetId: 'spotlight-incidents-header',
-      tag: 'LIVE OVERSIGHT',
-      title: 'Active Deployments',
-      script: `Welcome to Live Incidents, ${firstName}. This command center provides real-time oversight of all ongoing field operations.`
+      tag: 'PATIENT OVERSIGHT',
+      title: 'Incidents by Patient',
+      script: `Welcome to Incidents, ${firstName}. Every wound scan from the headset is filed under the patient it belongs to, so repeat injuries build a single history per patient.`
     },
     {
       targetId: 'spotlight-incident-card-0',
-      tag: 'MISSION TELEMETRY',
-      title: 'Tactical Operation Status',
-      script: 'Each active mission tracks the deployed hardware, responder status, and a live T-MINUS mission clock. Commanders can coordinate or resolve operations directly from this console. Briefing complete.'
+      tag: 'PATIENT RECORD',
+      title: 'Patient Card',
+      script: 'Each card shows the patient, how many incidents they have, their worst triage and where they were last scanned. Open a card to see their photo, location and every incident. Briefing complete.'
     }
   ];
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto min-h-screen">
-      
+
       {/* 🛡️ TARGET 1: Header */}
-      <div id="spotlight-incidents-header" className="flex justify-between items-end mb-8">
+      <div id="spotlight-incidents-header" className="flex justify-between items-end mb-6 gap-4 flex-wrap">
         <div>
           <p className="text-[11px] font-mono tracking-widest text-slate-400 uppercase">
-            Active field operations requiring immediate oversight
+            Incidents grouped by patient
           </p>
+          <input
+            className="form-input mt-3"
+            placeholder="Search patient name or ID..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ width: 260, padding: '6px 12px', fontSize: 12 }}
+          />
         </div>
-        <HoverTooltip tooltip="Sessions recorded in the last 24 hours, treated as active field incidents until a dedicated incidents feed exists.">
+        <div className="flex gap-8">
+          <HoverTooltip tooltip="Patients with at least one incident in the last 24 hours.">
+            <div className="text-right">
+              <div className="text-3xl font-bold font-mono text-white">{activeCount}</div>
+              <div className="text-[10px] font-mono tracking-widest text-slate-500 uppercase">Active Patients</div>
+            </div>
+          </HoverTooltip>
           <div className="text-right">
-            <div className="text-3xl font-bold font-mono text-white">{activeIncidents.length}</div>
-            <div className="text-[10px] font-mono tracking-widest text-slate-500 uppercase">Active Units</div>
+            <div className="text-3xl font-bold font-mono text-white">{patients.length}</div>
+            <div className="text-[10px] font-mono tracking-widest text-slate-500 uppercase">Patients</div>
           </div>
-        </HoverTooltip>
+        </div>
       </div>
 
-      {/* Active Grid */}
-      {activeIncidents.length === 0 ? (
+      {unidentifiedCount > 0 && (
+        <div className="mb-4 text-[11px] font-mono text-slate-500">
+          {unidentifiedCount} scan{unidentifiedCount === 1 ? '' : 's'} without a patient (recorded before face login was linked) —{' '}
+          <Link href="/reports" className="text-cyan-400 underline">view in Reports</Link>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {[...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 72 }} />)}
+        </div>
+      ) : visible.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 border border-white/5 border-dashed rounded-xl bg-white/[0.01]">
           <div className="w-3 h-3 rounded-full bg-slate-600 mb-4" />
-          <div className="text-sm font-mono text-slate-400">NO ACTIVE DEPLOYMENTS</div>
+          <div className="text-sm font-mono text-slate-400">{search ? 'NO MATCHING PATIENTS' : 'NO PATIENT INCIDENTS YET'}</div>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <AnimatePresence>
-            {activeIncidents.map((inc: any, idx: number) => {
-              const isCritical = inc.triage_category === 'Red';
-
+            {visible.map((p: PatientRecord, idx: number) => {
+              const name = p.patient_name || p.patient_id;
+              const isActive = sessionStatus(p.last_seen) === 'Active';
+              const isCritical = p.worst_triage === 'Red';
               return (
                 <motion.div
-                  key={inc.session_id}
-                  id={idx === 0 ? 'spotlight-incident-card-0' : undefined} /* 🛡️ TARGET 2: Highlights the very first card */
+                  key={p.patient_id}
+                  id={idx === 0 ? 'spotlight-incident-card-0' : undefined} /* 🛡️ TARGET 2 */
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ delay: idx * 0.05 }}
-                  className={`bg-white/[0.02] border ${isCritical ? 'border-red-500/30 bg-red-500/[0.02]' : 'border-white/10'} rounded-lg p-5 flex flex-col md:flex-row items-center gap-6 backdrop-blur-xl transition-all hover:bg-white/[0.05]`}
+                  transition={{ delay: idx * 0.04 }}
+                  onClick={() => setActiveProfilePatientId(p.patient_id)}
+                  className={`cursor-pointer bg-white/[0.02] border ${isCritical ? 'border-red-500/30 bg-red-500/[0.02]' : 'border-white/10'} rounded-lg p-4 flex flex-col md:flex-row md:items-center gap-5 backdrop-blur-xl transition-all hover:bg-white/[0.05]`}
                 >
-                  {/* Status Indicator & Timer */}
-                  <div className="relative flex flex-col items-center justify-center w-24 border-r border-white/10 pr-6 overflow-hidden">
-                    {isCritical && (
-                      <motion.div
-                        className="absolute w-32 h-32 rounded-full pointer-events-none"
-                        style={{ background: 'conic-gradient(from 0deg, transparent 75%, rgba(248,113,113,0.12) 100%)' }}
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
-                      />
-                    )}
-                    <div className="relative text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-2">T-MINUS</div>
-                    <div className={`relative ${isCritical ? 'text-red-400' : 'text-cyan-400'} font-bold`}>
-                      <MissionClock startTime={inc.created_at} />
+                  <div className="flex items-center gap-4 md:w-72 shrink-0">
+                    <PatientPhoto patientId={p.patient_id} name={name} />
+                    <div className="min-w-0">
+                      <div className="text-sm text-white font-bold truncate" title={name}>{name}</div>
+                      <div className="text-[10px] font-mono text-slate-500 truncate" title={p.patient_id}>ID {p.patient_id}</div>
+                      {isActive && <div className="text-[9px] font-mono tracking-widest text-cyan-400 mt-1">● ACTIVE</div>}
                     </div>
                   </div>
 
-                  {/* Core Info */}
-                  <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div>
-                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">SESSION ID</div>
-                      <div className="text-xs font-mono text-white font-bold truncate" title={inc.session_id}>{inc.session_id}</div>
+                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">INCIDENTS</div>
+                      <div className="text-sm font-mono text-white font-bold">{p.incidents.length}</div>
                     </div>
                     <div>
-                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">TRIAGE</div>
-                      <span className={`triage-badge triage-${inc.triage_category} uppercase`}>{inc.triage_category}</span>
+                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">WORST TRIAGE</div>
+                      <span className={`triage-badge triage-${p.worst_triage} uppercase`}>{p.worst_triage}</span>
                     </div>
-                    <HoverTooltip tooltip="Photographic Wound Assessment Tool score (0-20) — a severity rating derived from automated analysis of the wound image. 0-4 Minor · 4-8 Delayed · 8-12 Urgent · 12-20 Critical.">
-                      <div>
-                        <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">PWAT SCORE</div>
-                        <div className="text-xs font-mono font-bold" style={{ color: pwatColor(inc.pwat_score) }}>{Number(inc.pwat_score).toFixed(1)}</div>
+                    <div>
+                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">MAX PWAT</div>
+                      <div className="text-xs font-mono font-bold" style={{ color: pwatColor(p.max_pwat ?? 0) }}>
+                        {p.max_pwat != null ? p.max_pwat.toFixed(1) : '—'}
                       </div>
-                    </HoverTooltip>
+                    </div>
                     <div>
-                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">DEPTH</div>
-                      <div className="text-xs font-mono text-slate-300">{inc.wound_metrics?.depth_severity ?? '—'}</div>
+                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">LAST SEEN</div>
+                      <div className="text-xs font-mono text-slate-300">{formatDate(p.last_seen)}</div>
+                      <div className="text-[10px] text-slate-500 truncate">{p.latest_body_region || '—'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-mono text-slate-500 tracking-widest uppercase mb-1">LAST LOCATION</div>
+                      <div className="text-xs font-mono text-slate-300">{hasGps(p.latest_location) ? gpsText(p.latest_location) : '—'}</div>
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-3 pl-6 border-l border-white/10">
-                    <button
-                      onClick={() => setActivePatientId(inc.session_id)}
-                      className="px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-mono rounded hover:bg-cyan-500/20 transition-colors"
-                    >
-                      VIEW DETAILS
-                    </button>
-                  </div>
+                  <div className="text-[10px] font-mono text-cyan-400 shrink-0">VIEW PATIENT →</div>
                 </motion.div>
               );
             })}
@@ -165,7 +176,7 @@ export default function IncidentsPage() {
       )}
 
       {/* 🛡️ INJECT THE TOUR ENGINE */}
-      <VoiceTour storageKey="valkyra-tour-incidents-live" steps={PAGE_STEPS} />
+      <VoiceTour storageKey="valkyra-tour-incidents-patients" steps={PAGE_STEPS} />
 
     </div>
   );

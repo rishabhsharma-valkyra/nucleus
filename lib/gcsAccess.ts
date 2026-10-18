@@ -10,6 +10,7 @@ import { Session } from 'next-auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { getEffectiveRole } from '@/lib/serverRole';
 import { forwardToBackend } from '@/lib/backend';
+import { PATIENT_ACCESS_ENABLED } from '@/lib/patientAccess';
 
 const UUID_RE = /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i;
 
@@ -98,6 +99,11 @@ export async function authorizeGcsPath(
 
   if (hasPermission(getEffectiveRole(session), PERMISSIONS.OPERATIONS_VIEW)) {
     return { ok: true };
+  }
+
+  // Patient access is switched off entirely for now — see lib/patientAccess.ts.
+  if (!PATIENT_ACCESS_ENABLED) {
+    return { ok: false, status: 403, message: 'Forbidden' };
   }
 
   const email = session.user?.email;

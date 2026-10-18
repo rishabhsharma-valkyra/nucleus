@@ -1,11 +1,9 @@
 'use client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
-import { fetchSummary, fetchSessions, fetchMySessions, fetchPatient, fetchPatientWounds, fetchIncidents, createIncident, resolveIncident, checkHealth } from '@/lib/api';
+import { fetchSummary, fetchSessions, fetchMySessions, fetchPatient, fetchPatientWounds, fetchPatientPhoto, checkHealth } from '@/lib/api';
 import { queryKeys } from '@/lib/queryKeys';
 import { useNucleusStore } from '@/store/useNucleusStore';
-import { generateIncidentId } from '@/lib/utils';
-import { Incident } from '@/types';
 import { Permission, hasPermission } from '@/lib/rbac';
 import { DEV_ROLE_SWITCH_ENABLED, readDevRoleCookie } from '@/lib/devRole';
 
@@ -114,48 +112,12 @@ export function usePatientWounds(patientId: string | null | undefined, enabled =
   });
 }
 
-export function useIncidents() {
+export function usePatientPhoto(patientId: string | null | undefined, enabled = true) {
   return useQuery({
-    queryKey: queryKeys.incidents,
-    queryFn: fetchIncidents,
-    staleTime: 30_000,
-  });
-}
-
-export function useCreateIncident() {
-  const qc = useQueryClient();
-  const addToast = useNucleusStore((s) => s.addToast);
-  const setIncidentModalOpen = useNucleusStore((s) => s.setIncidentModalOpen);
-
-  return useMutation({
-    mutationFn: (data: Omit<Incident, 'id' | 'created_at'>) => {
-      const id = generateIncidentId();
-      return createIncident({ ...data, id } as any);
-    },
-    onSuccess: (_, variables) => {
-      qc.invalidateQueries({ queryKey: queryKeys.incidents });
-      setIncidentModalOpen(false);
-      addToast({ type: 'success', message: `✓ Incident deployed · ${variables.responder} dispatched` });
-    },
-    onError: () => {
-      addToast({ type: 'error', message: 'Failed to create incident. Check API connection.' });
-    },
-  });
-}
-
-export function useResolveIncident() {
-  const qc = useQueryClient();
-  const addToast = useNucleusStore((s) => s.addToast);
-
-  return useMutation({
-    mutationFn: resolveIncident,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.incidents });
-      addToast({ type: 'success', message: 'Incident marked as resolved.' });
-    },
-    onError: () => {
-      addToast({ type: 'error', message: 'Failed to resolve incident.' });
-    },
+    queryKey: queryKeys.patientPhoto(patientId ?? ''),
+    queryFn: () => fetchPatientPhoto(patientId!),
+    enabled: enabled && !!patientId,
+    staleTime: 10 * 60_000,
   });
 }
 
