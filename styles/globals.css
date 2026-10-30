@@ -521,3 +521,22 @@ body {
 /* ── SIGN-IN PAGE ── */
 .signin-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
 .signin-card { background: rgba(6,12,24,0.8); border: 1px solid var(--border-hi); border-radius: 24px; padding: 48px; width: 400px; text-align: center; backdrop-filter: blur(24px); box-shadow: 0 0 80px rgba(59,130,246,0.1); }
+
+/* ── Incident map (Leaflet) ── */
+.nucleus-headset { width: 18px; height: 18px; border-radius: 50%; background: rgba(34,211,238,0.25); display: flex; align-items: center; justify-content: center; animation: nucleus-headset-pulse 1.8s ease-out infinite; }
+.nucleus-headset span { width: 10px; height: 10px; border-radius: 50%; background: #22d3ee; border: 2px solid #020617; }
+.nucleus-headset.stale { animation: none; background: rgba(148,163,184,0.25); }
+.nucleus-headset.stale span { background: #94a3b8; }
+@keyframes nucleus-headset-pulse { 0% { box-shadow: 0 0 0 0 rgba(34,211,238,0.6); } 100% { box-shadow: 0 0 0 14px rgba(34,211,238,0); } }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: rgba(2,6,23,0.95); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.leaflet-container a.leaflet-popup-close-button { color: #94a3b8; }
+.leaflet-control-attribution { background: rgba(2,6,23,0.7) !important; color: #64748b !important; }
+.leaflet-control-attribution a { color: #94a3b8 !important; }
+.leaflet-bar a { background: rgba(2,6,23,0.9); color: #e2e8f0; border-color: rgba(255,255,255,0.12); }
+
+/* Native <select> menus ignore the dark theme unless told to: without this
+   the open list renders light text on a white background (unreadable). */
+select, .form-input, .form-select { color-scheme: dark; }
+select option, select optgroup { background-color: #0f172a; color: #e2e8f0; }
+select optgroup { color: #94a3b8; font-style: normal; font-weight: 600; }
+select option:checked { background-color: #1e3a5f; color: #ffffff; }

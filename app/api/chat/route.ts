@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS, ROLE_LABELS } from '@/lib/rbac';
 import { getEffectiveRole } from '@/lib/serverRole';
+import { backendHeaders } from '@/lib/backend';
 
 export const maxDuration = 30;
 
@@ -51,7 +52,7 @@ async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 12_0
     try {
       const response = await fetch(url, {
         ...options,
-        headers: { ...(options.headers || {}), 'x-internal-key': process.env.INTERNAL_API_KEY ?? '' },
+        headers: { ...(options.headers || {}), ...(await backendHeaders()) },
         signal: controller.signal,
       });
       clearTimeout(id);

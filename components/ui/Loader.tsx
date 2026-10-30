@@ -16,22 +16,26 @@ function CinematicGlasses({ phase, onLensBreach }: { phase: 'intro' | 'dive'; on
   // 540 degrees = 1 full spin + half spin to face the back
   const targetRotation = useRef(Math.PI * 3); 
 
-  useFrame((state, delta) => {
+  useFrame((state, rawDelta) => {
+    // Cap the step: after a background-tab pause the first delta can be minutes,
+    // which would overshoot every lerp / jump the rotation in one frame.
+    const delta = Math.min(rawDelta, 1 / 30);
+    const blend = (speed: number) => Math.min(1, delta * speed);
     // 1. The Cinematic Spin
-    scene.rotation.y = THREE.MathUtils.lerp(scene.rotation.y, targetRotation.current, delta * 1.5);
+    scene.rotation.y = THREE.MathUtils.lerp(scene.rotation.y, targetRotation.current, blend(1.5));
     scene.position.y = Math.sin(state.clock.elapsedTime * 2) * 0.1;
 
     // 2. The Dive Through the Lens
     if (phase === 'dive') {
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, -1.5, delta * 4);
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0.38, delta * 4);
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0.05, delta * 4);
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, -1.5, blend(4));
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0.38, blend(4));
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0.05, blend(4));
 
       if (camera.position.z < 1.0) {
         scene.traverse((child: any) => {
           if (child.isMesh && child.material) {
             child.material.transparent = true; 
-            child.material.opacity = THREE.MathUtils.lerp(child.material.opacity, 0, delta * 8);
+            child.material.opacity = THREE.MathUtils.lerp(child.material.opacity, 0, blend(8));
           }
         });
       }

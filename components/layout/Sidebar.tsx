@@ -48,7 +48,6 @@ const NAV: NavGroup[] = [
   {
     section: 'Operations',
     items: [
-      { href: '/reports',    label: 'Incident Reports', icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 7h6M5 10h4"/></svg> },
       { href: '/responders', label: 'Responders',       icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5" r="2.5"/><path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/></svg> },
       { href: '/devices',    label: 'AR Devices',       icon: <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="4" width="10" height="8" rx="1.5"/><path d="M11 7l4 2-4 2V7z"/></svg>, badge: true },
     ],
@@ -132,7 +131,7 @@ export default function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`nav-item${pathname === item.href ? ' active' : ''}`}
+                className={`nav-item${pathname === item.href || pathname.startsWith(item.href + '/') ? ' active' : ''}`}
               >
                 {item.icon}
                 {item.label}

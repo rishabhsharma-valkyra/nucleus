@@ -19,7 +19,11 @@ function GlassesModel({ onComplete }: { onComplete: () => void }) {
     return () => clearTimeout(timer);
   }, []);
 
-  useFrame((state, delta) => {
+  useFrame((state, rawDelta) => {
+    // Cap the step: after a background-tab pause the first delta can be minutes,
+    // which would overshoot every lerp / jump the rotation in one frame.
+    const delta = Math.min(rawDelta, 1 / 30);
+    const blend = (speed: number) => Math.min(1, delta * speed);
     if (animationStage === 'intro') {
       // Cinematic slow rotation while floating
       scene.rotation.y += delta * 0.2;
@@ -28,10 +32,10 @@ function GlassesModel({ onComplete }: { onComplete: () => void }) {
     if (animationStage === 'zoom') {
       // The "Dive In" Animation: Move camera forward THROUGH the lens
       // We lerp (smoothly transition) the camera's Z position to push it past the glasses
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, -2, delta * 3);
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, -2, blend(3));
       
       // We also lerp the camera's X position slightly to aim precisely at the right lens
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0.5, delta * 2);
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0.5, blend(2));
 
       // Once the camera passes through the lens (Z < 0.1), trigger the dashboard
       if (camera.position.z < 0.1) {

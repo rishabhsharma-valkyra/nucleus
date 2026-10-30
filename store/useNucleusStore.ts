@@ -9,14 +9,11 @@ interface NucleusStore {
   allSessions: Session[];
   setAllSessions: (s: Session[]) => void;
 
-  // Active patient modal
+  // Active case window: the session (one End Scan) and, optionally, which of
+  // its injuries (body region) to show first
   activePatientId: string | null;
-  setActivePatientId: (id: string | null) => void;
-
-  // Patient profile modal (keyed by patient_id, not session) — all of one
-  // patient's incidents
-  activeProfilePatientId: string | null;
-  setActiveProfilePatientId: (id: string | null) => void;
+  activeRegion: string | null;
+  setActivePatientId: (id: string | null, region?: string | null) => void;
 
   // Filters
   triageFilter: 'all' | TriageCategory;
@@ -61,10 +58,8 @@ export const useNucleusStore = create<NucleusStore>()(
       setAllSessions: (s) => set({ allSessions: s }),
 
       activePatientId: null,
-      setActivePatientId: (id) => set({ activePatientId: id }),
-
-      activeProfilePatientId: null,
-      setActiveProfilePatientId: (id) => set({ activeProfilePatientId: id }),
+      activeRegion: null,
+      setActivePatientId: (id, region = null) => set({ activePatientId: id, activeRegion: region }),
 
       triageFilter: 'all',
       setTriageFilter: (f) => set({ triageFilter: f }),

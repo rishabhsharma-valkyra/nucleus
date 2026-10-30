@@ -1,7 +1,11 @@
 'use client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Session } from '@/types';
+import {
+  SessionsSnapshot, mergeSessions, hasPendingAnalysis, shouldReloadFully, POLL_MS, POLL_PENDING_MS,
+} from '@/lib/sessionSync';
 import { useSession } from 'next-auth/react';
-import { fetchSummary, fetchSessions, fetchMySessions, fetchPatient, fetchPatientWounds, fetchPatientPhoto, checkHealth } from '@/lib/api';
+import { fetchSummary, fetchSessions, fetchMySessions, fetchPatient, fetchPatientWounds, fetchPatientPhoto, fetchLiveLocations, checkHealth } from '@/lib/api';
 import { queryKeys } from '@/lib/queryKeys';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { Permission, hasPermission } from '@/lib/rbac';
@@ -49,37 +53,57 @@ export function useSessions(limit = 20, offset = 0) {
 // critical-case watcher would all have been quietly computing over the
 // newest 100 only, disagreeing with the totals from /patients/summary.
 // Page through instead, with a ceiling so a runaway dataset can't spin here.
-const SESSIONS_PAGE_SIZE = 100;
-const SESSIONS_MAX_PAGES = 20; // 2000 sessions
+const SESSIONS_PAGE_SIZE = 500;
+const SESSIONS_MAX_PAGES = 8; // 4000 sessions
+
+async function loadSessionPages(since?: string): Promise<{ sessions: Session[]; asOf?: string; truncated: boolean }> {
+  const all: Session[] = [];
+  let asOf: string | undefined;
+  let truncated = false;
+  for (let page = 0; page < SESSIONS_MAX_PAGES; page++) {
+    const data = await fetchSessions(SESSIONS_PAGE_SIZE, page * SESSIONS_PAGE_SIZE, since);
+    // The FIRST page's as_of is the earliest — safe as the next `since`
+    if (page === 0) asOf = data.as_of;
+    const batch = data.sessions ?? [];
+    all.push(...batch);
+    if (batch.length < SESSIONS_PAGE_SIZE) break;
+    if (page === SESSIONS_MAX_PAGES - 1) truncated = true;
+  }
+  return { sessions: all, asOf, truncated };
+}
 
 export function useAllSessions() {
   const setAllSessions = useNucleusStore((s) => s.setAllSessions);
-  return useQuery({
+  const qc = useQueryClient();
+  return useQuery<SessionsSnapshot>({
     queryKey: queryKeys.allSessions,
     queryFn: async () => {
-      const all: Awaited<ReturnType<typeof fetchSessions>>['sessions'] = [];
-      let truncated = false;
+      const prev = qc.getQueryData<SessionsSnapshot>(queryKeys.allSessions);
 
-      for (let page = 0; page < SESSIONS_MAX_PAGES; page++) {
-        const data = await fetchSessions(SESSIONS_PAGE_SIZE, page * SESSIONS_PAGE_SIZE);
-        const batch = data.sessions ?? [];
-        all.push(...batch);
-        if (batch.length < SESSIONS_PAGE_SIZE) break;
-        if (page === SESSIONS_MAX_PAGES - 1) truncated = true;
+      // Incremental: only scans delivered / AI-updated since the last poll
+      if (prev && !shouldReloadFully(prev)) {
+        try {
+          const { sessions: changed, asOf } = await loadSessionPages(prev.asOf);
+          const merged = mergeSessions(prev.sessions, changed);
+          if (changed.length) setAllSessions(merged);
+          return { ...prev, total_returned: merged.length, sessions: merged, asOf: asOf ?? prev.asOf };
+        } catch (e) {
+          console.warn('[useAllSessions] incremental poll failed — doing a full reload', e);
+        }
       }
 
+      const { sessions: all, asOf, truncated } = await loadSessionPages();
       if (truncated) {
         console.warn(
           `[useAllSessions] Stopped at ${all.length} sessions (${SESSIONS_MAX_PAGES}-page ceiling). ` +
           'Dashboard aggregates are now a partial view — move these pages to server-side aggregation.'
         );
       }
-
       setAllSessions(all);
-      return { total_returned: all.length, sessions: all };
+      return { total_returned: all.length, sessions: all, asOf, fullLoadedAt: Date.now() };
     },
-    staleTime: 60_000,
-    refetchInterval: 60_000,
+    staleTime: 15_000,
+    refetchInterval: (query) => (hasPendingAnalysis(query.state.data?.sessions) ? POLL_PENDING_MS : POLL_MS),
   });
 }
 
@@ -118,6 +142,16 @@ export function usePatientPhoto(patientId: string | null | undefined, enabled = 
     queryFn: () => fetchPatientPhoto(patientId!),
     enabled: enabled && !!patientId,
     staleTime: 10 * 60_000,
+  });
+}
+
+export function useLiveLocations(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.liveLocations,
+    queryFn: fetchLiveLocations,
+    enabled,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
   });
 }
 

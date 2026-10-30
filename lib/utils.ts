@@ -66,6 +66,18 @@ export function formatDate(iso: string | null): string {
   });
 }
 
+// "just now", "12 min ago", "3 h ago", "2 d ago" — how fresh a scan is matters
+// more to a responder than its clock time (shown alongside as a tooltip).
+export function timeAgo(iso: string | null | undefined): string {
+  const d = parseTimestamp(iso ?? null);
+  if (!d) return '—';
+  const s = Math.max(0, (Date.now() - d.getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return `${Math.floor(s / 86400)} d ago`;
+}
+
 export function formatDateShort(iso: string | null): string {
   const d = parseTimestamp(iso);
   if (!d) return '—';

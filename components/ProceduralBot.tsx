@@ -67,8 +67,15 @@ export default function ProceduralBot({ isLoading = false, alert = false, notice
   const flameLMatRef = useRef<THREE.MeshStandardMaterial>(null);
   const flameRMatRef = useRef<THREE.MeshStandardMaterial>(null);
 
-  useFrame((state, delta) => {
+  useFrame((state, rawDelta) => {
     const time = state.clock.elapsedTime;
+    // Browsers pause rendering in background tabs, so the first frame after
+    // returning can report a delta of several minutes. Unclamped, every
+    // lerp(a, b, delta * k) below would extrapolate far past its target
+    // (head spins, eye/core colours blow out into a cyan wash). Cap the step
+    // and keep each blend factor within [0, 1] so a long pause just resumes.
+    const delta = Math.min(rawDelta, 1 / 30);
+    const blend = (speed: number) => Math.min(1, delta * speed);
 
     // 1. Ultra-Smooth Cinematic Floating
     if (botGroupRef.current) {
@@ -105,25 +112,25 @@ export default function ProceduralBot({ isLoading = false, alert = false, notice
         targetRotX = THREE.MathUtils.clamp(-pointerRef.current.y * 0.15, -0.2, 0.2);
       }
 
-      headRef.current.rotation.y = THREE.MathUtils.lerp(headRef.current.rotation.y, targetRotY, delta * lerpSpeed);
-      headRef.current.rotation.x = THREE.MathUtils.lerp(headRef.current.rotation.x, targetRotX, delta * lerpSpeed);
+      headRef.current.rotation.y = THREE.MathUtils.lerp(headRef.current.rotation.y, targetRotY, blend(lerpSpeed));
+      headRef.current.rotation.x = THREE.MathUtils.lerp(headRef.current.rotation.x, targetRotX, blend(lerpSpeed));
     }
 
     // 3. Eye Pulse + Blink + Mood Color
     if (eyeLeftMatRef.current && eyeRightMatRef.current) {
       const basePulse = isLoading ? Math.abs(Math.sin(time * 5)) * 1.5 + 0.5 : 1.2;
       const pulse = noticing ? basePulse + (1 - Math.min(noticeElapsed / 0.3, 1)) * 2 : basePulse;
-      eyeLeftMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(eyeLeftMatRef.current.emissiveIntensity, pulse, delta * 5);
-      eyeRightMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(eyeRightMatRef.current.emissiveIntensity, pulse, delta * 5);
+      eyeLeftMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(eyeLeftMatRef.current.emissiveIntensity, pulse, blend(5));
+      eyeRightMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(eyeRightMatRef.current.emissiveIntensity, pulse, blend(5));
 
       const moodColor = alert ? MOOD_RED : MOOD_CYAN;
-      eyeLeftMatRef.current.color.lerp(moodColor, delta * 4);
-      eyeLeftMatRef.current.emissive.lerp(moodColor, delta * 4);
-      eyeRightMatRef.current.color.lerp(moodColor, delta * 4);
-      eyeRightMatRef.current.emissive.lerp(moodColor, delta * 4);
+      eyeLeftMatRef.current.color.lerp(moodColor, blend(4));
+      eyeLeftMatRef.current.emissive.lerp(moodColor, blend(4));
+      eyeRightMatRef.current.color.lerp(moodColor, blend(4));
+      eyeRightMatRef.current.emissive.lerp(moodColor, blend(4));
       if (coreMatRef.current) {
-        coreMatRef.current.color.lerp(moodColor, delta * 4);
-        coreMatRef.current.emissive.lerp(moodColor, delta * 4);
+        coreMatRef.current.color.lerp(moodColor, blend(4));
+        coreMatRef.current.emissive.lerp(moodColor, blend(4));
       }
     }
 
@@ -152,7 +159,7 @@ export default function ProceduralBot({ isLoading = false, alert = false, notice
       const speechScale = isLoading 
         ? 1 + Math.abs(Math.sin(time * 15)) * 1.5 
         : 1 + Math.abs(Math.sin(time * 2)) * 0.2;
-      mouthRef.current.scale.x = THREE.MathUtils.lerp(mouthRef.current.scale.x, speechScale, delta * 10);
+      mouthRef.current.scale.x = THREE.MathUtils.lerp(mouthRef.current.scale.x, speechScale, blend(10));
     }
 
     // 5. Dynamic Rocket Exhaust (Flickering Plasma Effect)

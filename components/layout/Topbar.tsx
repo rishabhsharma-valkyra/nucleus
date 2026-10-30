@@ -8,7 +8,6 @@ const TITLES: Record<string, string> = {
   '/overview':       'Command Overview',
   '/incidents':      'Patient Incidents',
   '/analytics':      'Analytics',
-  '/reports':        'Incident Reports',
   '/responders':     'Responders',
   '/devices':        'AR Devices',
   '/ai-performance': 'Model Performance',
@@ -60,7 +59,7 @@ export default function Topbar() {
   return (
     <div className="topbar">
       <div>
-        <div className="page-title">{TITLES[pathname] ?? 'Nucleus'}</div>
+        <div className="page-title">{TITLES[pathname] ?? (pathname.startsWith('/incidents/') ? 'Patient Record' : 'Nucleus')}</div>
         <div className="page-sub">
           Valkyra Hospital API · <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{clock}</span>
         </div>

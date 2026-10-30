@@ -26,6 +26,16 @@ export interface WoundLocation {
   captured_at: string | null;
 }
 
+// A headset's latest GPS fix (overwritten every ~10s while it runs)
+export interface LiveHeadset {
+  device_id: string;
+  session_id: string | null;
+  patient_id: string | null;
+  latitude: number;
+  longitude: number;
+  last_updated_unix: number | null;
+}
+
 export interface Session {
   session_id: string;
   source_image: string;
@@ -39,9 +49,62 @@ export interface Session {
   // sessions or scans without a login.
   patient_id: string | null;
   patient_name: string | null;
-  // Where on the body the wound is (Gemini), e.g. "Left forearm"
+  // Every body region in this scan, worst first, e.g. "Left Forearm, Face".
+  // Per-wound regions are on the frames (one End Scan covers several wounds).
   body_region: string | null;
   location: WoundLocation;
+  // One entry per wound detection during the scan
+  frames?: WoundFrame[];
+  // Frames whose AI read (body region + report) hasn't arrived yet. The scan
+  // reaches the dashboard first; AI reads follow and are merged in.
+  analysis_pending?: number;
+  ingested_at?: string | null;
+  // "end_scan", or "auto_recovered" when the headset server published a scan
+  // that never received End Scan (crash / app closed)
+  closed_by?: string | null;
+  // Latest clinician review per injury (keyed by the injury's AI region)
+  reviews?: ClinicianReview[];
+}
+
+export type Severity = 'Minor' | 'Moderate' | 'Severe' | 'Critical';
+
+// A clinician's confirmation/correction of the AI read of one injury
+export interface ClinicianReview {
+  review_id: string;
+  // AI region of the reviewed injury group (null for older scans)
+  model_region: string | null;
+  frame_keys: string[];
+  verdict: 'confirmed' | 'corrected';
+  body_region: string | null;
+  wound_type: string | null;
+  severity: Severity | null;
+  triage: TriageCategory | null;
+  notes: string | null;
+  reviewer_email: string;
+  reviewer_name: string | null;
+  reviewer_role: string | null;
+  reviewed_at: string | null;
+}
+
+// One auto-detection of a wound during a scan
+export interface WoundFrame {
+  frame_index?: number;
+  frame_key?: string;
+  pwat_score: number | null;
+  triage: TriageCategory | null;
+  depth_severity: string | null;
+  depth_range?: number | null;
+  depth_mean: number | null;
+  area_pct: number | null;
+  gemini_text: string | null;
+  source_image?: string | null;
+  gcs_outputs?: Partial<GcsOutputs>;
+  captured_at?: string | null;
+  // Fixed-list body region (patient's own left/right); absent on older scans
+  body_region?: string | null;
+  // "pending" until the frame's AI read arrives
+  analysis_status?: 'pending' | 'done';
+  analysis_model?: string | null;
 }
 
 export interface TriageCount {
@@ -64,6 +127,9 @@ export interface Summary {
 export interface PatientsResponse {
   total_returned: number;
   sessions: Session[];
+  // Server time to pass as `since` on the next poll (only scans delivered or
+  // AI-updated after it come back). Absent on older API versions.
+  as_of?: string;
 }
 
 export type IncidentType = 'GSW' | 'STAB' | 'BLUNT' | 'BURN' | 'FRACTURE' | 'CRUSH';
