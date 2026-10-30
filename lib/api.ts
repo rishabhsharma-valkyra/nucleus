@@ -16,8 +16,28 @@ const api = axios.create({
 export const fetchSummary = (): Promise<Summary> =>
   axios.get<Summary>('/api/patients/summary').then(r => r.data);
 
-export const fetchSessions = (limit = 20, offset = 0): Promise<PatientsResponse> =>
-  axios.get<PatientsResponse>(`/api/patients?limit=${limit}&offset=${offset}`).then(r => r.data);
+export const fetchSessions = (limit = 20, offset = 0, since?: string): Promise<PatientsResponse> =>
+  axios.get<PatientsResponse>(
+    `/api/patients?limit=${limit}&offset=${offset}` + (since ? `&since=${encodeURIComponent(since)}` : '')
+  ).then(r => r.data);
+
+// Clinician review of one injury (doctor/admin). Reviewer identity is added
+// server-side from the signed-in session.
+export interface ReviewInput {
+  session_id: string;
+  model_region: string | null;
+  frame_keys: string[];
+  patient_id: string | null;
+  verdict: 'confirmed' | 'corrected';
+  body_region: string | null;
+  wound_type: string | null;
+  severity: string | null;
+  triage: string | null;
+  notes: string | null;
+  ai_snapshot: Record<string, unknown>;
+}
+export const postReview = (review: ReviewInput) =>
+  axios.post<{ status: string; review: unknown }>('/api/reviews', review).then(r => r.data);
 
 // Every wound session recorded for one patient (admin/doctor only).
 export const fetchPatientWounds = (patientId: string, limit = 100): Promise<PatientsResponse> =>

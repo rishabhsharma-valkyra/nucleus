@@ -5,11 +5,12 @@ import { usePatient, usePatientWounds, usePermission } from '@/hooks';
 import { PERMISSIONS } from '@/lib/rbac';
 import { pwatColor, depthSeverityColor, formatDate, parseTimestamp } from '@/lib/utils';
 import { gcsImageUrl as gcsImg, gcsTextUrl as gcsTxt } from '@/lib/api';
-import { patientHref, frameLabel } from '@/lib/patients';
+import { patientHref, frameLabel, frameLabelsOf, injuriesOf, regionLabel, regionsText, MULTIPLE_INJURIES, isAnalysing } from '@/lib/patients';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { MetricInfo, METRIC_DESCRIPTIONS as info } from '@/components/ui/MetricInfo';
+import ClinicianReview from '@/components/patients/ClinicianReview';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
@@ -51,28 +52,40 @@ const PDF_IMAGES = [
 
 export default function PatientModal() {
   const activePatientId = useNucleusStore((s) => s.activePatientId);
+  const activeRegion = useNucleusStore((s) => s.activeRegion);
   const setActivePatientId = useNucleusStore((s) => s.setActivePatientId);
   const router = useRouter();
   const { data: fetched, isLoading: fetchLoading } = usePatient(activePatientId);
 
-  // The patient's injuries (all of their sessions) drive the injury switcher.
-  // Only for roles that may list all patients (enforced server-side too).
-  // Remember the last patient id so switching injuries keeps the list (and
-  // the switcher) in place while the newly selected session loads.
+  // The patient's encounters (all of their End Scans) drive the injury
+  // switcher. Only for roles that may list all patients (enforced
+  // server-side too). Remember the last patient id so switching to another
+  // encounter keeps the list (and the switcher) in place while it loads.
   const canViewAllPatients = usePermission(PERMISSIONS.OPERATIONS_VIEW);
+  const canReview = usePermission(PERMISSIONS.CLINICAL_REVIEW);
   const lastPatientIdRef = useRef<string | null>(null);
   if (fetched?.patient_id) lastPatientIdRef.current = fetched.patient_id;
   const { data: patientWounds } = usePatientWounds(fetched?.patient_id ?? lastPatientIdRef.current, canViewAllPatients);
 
   const woundList = patientWounds?.sessions ?? [];
   // Ignore a remembered list that belongs to a different patient
-  const injuries = woundList.some((w) => w.session_id === activePatientId)
+  const listedEncounters = woundList.some((w) => w.session_id === activePatientId)
     ? [...woundList].sort((a, b) => (parseTimestamp(b.created_at)?.getTime() ?? 0) - (parseTimestamp(a.created_at)?.getTime() ?? 0))
     : [];
   // Show the listed copy instantly while the full record loads — no flash
-  // back to a skeleton when switching between injuries.
-  const patient = fetched ?? injuries.find((w) => w.session_id === activePatientId);
+  // back to a skeleton when switching between encounters.
+  const patient = fetched ?? listedEncounters.find((w) => w.session_id === activePatientId);
   const isLoading = !patient && fetchLoading;
+
+  // Injuries: one End Scan covers every wound scanned in one go, split by
+  // body region. The open encounter uses the full record; others the list.
+  const encounters = patient
+    ? (listedEncounters.length ? listedEncounters.map((e) => (e.session_id === patient.session_id ? patient : e)) : [patient])
+    : [];
+  const encounterInjuries = encounters.map((e) => ({ encounter: e, injuries: injuriesOf(e) }));
+  const sessionInjuries = encounterInjuries.find((g) => g.encounter.session_id === activePatientId)?.injuries ?? [];
+  const injuryCount = encounterInjuries.reduce((n, g) => n + g.injuries.length, 0);
+  const activeInjury = sessionInjuries.find((i) => i.groupRegion === activeRegion) ?? sessionInjuries[0] ?? null;
 
   const [lightbox, setLightbox] = useState<{ path: string; title: string } | null>(null);
   const [reportText, setReportText] = useState<string | null>(null);
@@ -90,7 +103,7 @@ export default function PatientModal() {
       setActiveFrameIndex(0);
     }
     prevCaseIdRef.current = activePatientId;
-  }, [activePatientId]);
+  }, [activePatientId, activeRegion]);
 
   if (!activePatientId) return null;
   // Rendered via a portal to document.body — .shell (the dashboard's root
@@ -116,12 +129,20 @@ export default function PatientModal() {
   };
 
   const s: any = patient;
-  
-  const frames = s?.frames || [];
-  const activeFrame = frames.length > 0 ? frames[activeFrameIndex] : null;
+
+  // The selected injury's frames (repeat detections of that one wound)
+  const frames: any[] = activeInjury?.frames ?? s?.frames ?? [];
+  const activeFrame = frames.length > 0 ? frames[Math.min(activeFrameIndex, frames.length - 1)] : null;
+  const injuryRegion = activeInjury?.region ?? s?.body_region ?? null;
+  const injuryTriage = activeInjury?.triage ?? s?.triage_category;
+  const openInjury = (sessionId: string, region: string | null) => setActivePatientId(sessionId, region);
+
+  // Every frame of the scan labelled by its own injury ("Left Forearm · 2")
+  const allFrames: any[] = s?.frames ?? [];
+  const labelOf = s ? frameLabelsOf(s) : (fi: number) => frameLabel(null, fi);
 
   const displayPwat = activeFrame?.pwat_score ?? s?.pwat_score ?? '—';
-  const displayTriage = activeFrame?.triage ?? s?.triage_category;
+  const displayTriage = activeFrame?.triage ?? injuryTriage;
   const displayDepthSeverity = activeFrame?.depth_severity ?? s?.wound_metrics?.depth_severity ?? '—';
   const displayArea = activeFrame?.area_pct ?? s?.wound_metrics?.area_pct;
   const displayDepthMean = activeFrame?.depth_mean ?? s?.wound_metrics?.depth_mean;
@@ -148,17 +169,22 @@ export default function PatientModal() {
     return d ? d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : null;
   };
   const triageColor: Record<string, string> = { Red: 'var(--red)', Orange: 'var(--amber)', Yellow: '#facc15', Green: 'var(--green)' };
+  const encounterRegions = s ? regionsText(s) : null;
   const timelineEvents = [
-    ...frames.map((f: any, idx: number) => ({
+    ...allFrames.map((f: any, idx: number) => ({
       at: f.captured_at,
-      e: `${frameLabel(s?.body_region, idx)} captured — PWAT ${f.pwat_score ?? '—'}${f.triage ? ` (${f.triage})` : ''}${f.depth_severity ? `, ${f.depth_severity}` : ''}`,
+      e: `${labelOf(idx)} captured — PWAT ${f.pwat_score ?? '—'}${f.triage ? ` (${f.triage})` : ''}${f.depth_severity ? `, ${f.depth_severity}` : ''}`,
       color: triageColor[f.triage] ?? 'var(--amber)',
     })),
     ...(hasGps && loc.captured_at
       ? [{ at: loc.captured_at, e: `Headset GPS fix ${gpsText}`, color: 'var(--cyan)' }]
       : []),
     ...(s?.created_at
-      ? [{ at: s.created_at, e: `Case recorded${s?.body_region ? ` — ${s.body_region}` : ''}, triage ${s?.triage_category ?? '—'}`, color: 'rgba(255,255,255,0.5)' }]
+      ? [{
+          at: s.created_at,
+          e: `End Scan recorded — ${sessionInjuries.length} injur${sessionInjuries.length === 1 ? 'y' : 'ies'}${encounterRegions ? ` (${encounterRegions})` : ''}, triage ${s?.triage_category ?? '—'}`,
+          color: 'rgba(255,255,255,0.5)',
+        }]
       : []),
   ]
     .map((ev) => ({ ...ev, time: fmtTime(ev.at) ?? 'Time not recorded', t: parseTimestamp(ev.at ?? null)?.getTime() ?? Infinity }))
@@ -215,39 +241,61 @@ export default function PatientModal() {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {displayTriage && <span className={`triage-badge triage-${displayTriage}`}>{displayTriage}</span>}
+              {sessionInjuries.length >= MULTIPLE_INJURIES && (
+                <span
+                  title="Several wounds in one scan can add up to a serious patient — review overall priority"
+                  style={{ fontSize: 9, fontFamily: 'var(--mono)', letterSpacing: 1.5, color: 'var(--amber)', border: '1px solid rgba(251,191,36,0.4)', borderRadius: 6, padding: '3px 8px' }}
+                >
+                  MULTIPLE INJURIES ({sessionInjuries.length})
+                </span>
+              )}
+              {injuryTriage && <span className={`triage-badge triage-${injuryTriage}`}>{injuryTriage}</span>}
               <div className="modal-close" onClick={() => setActivePatientId(null)}>✕</div>
             </div>
           </div>
 
-          {/* Injury switcher — every wound of this patient, by body region */}
-          {injuries.length > 1 && (
+          {/* Injury switcher — every wound of this patient, by body region,
+              grouped by encounter (End Scan) when there is more than one */}
+          {injuryCount > 1 && (
             <div style={{ padding: '10px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', flexShrink: 0 }}>
-                Injuries ({injuries.length})
+                Injuries ({injuryCount})
               </div>
-              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-                {injuries.map((w: any) => {
-                  const active = w.session_id === activePatientId;
-                  return (
-                    <button
-                      key={w.session_id}
-                      onClick={() => setActivePatientId(w.session_id)}
-                      title={`${w.body_region || 'Region not specified'} · ${formatDate(w.created_at)} · ${w.triage_category}`}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 8, whiteSpace: 'nowrap',
-                        cursor: 'pointer', transition: 'all 0.2s', fontSize: 11,
-                        border: active ? '1px solid rgba(34,211,238,0.5)' : '1px solid rgba(255,255,255,0.1)',
-                        background: active ? 'rgba(34,211,238,0.08)' : 'transparent',
-                        color: active ? 'var(--cyan)' : 'var(--text2)',
-                      }}
-                    >
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: triageColor[w.triage_category] ?? 'var(--text3)', flexShrink: 0 }} />
-                      <span style={{ fontWeight: 600 }}>{w.body_region || 'Region not specified'}</span>
-                      <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{formatDate(w.created_at)}</span>
-                    </button>
-                  );
-                })}
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, alignItems: 'center' }}>
+                {encounterInjuries.map(({ encounter, injuries }, gi) => (
+                  <div key={encounter.session_id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                    {encounterInjuries.length > 1 && (
+                      <span
+                        style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--text3)', whiteSpace: 'nowrap', paddingLeft: gi ? 8 : 0, borderLeft: gi ? '1px solid rgba(255,255,255,0.1)' : 'none' }}
+                        title="Encounter — one End Scan"
+                      >
+                        {formatDate(encounter.created_at)}
+                      </span>
+                    )}
+                    {injuries.map((inj) => {
+                      const active = encounter.session_id === activePatientId && inj.key === activeInjury?.key;
+                      return (
+                        <button
+                          key={inj.key}
+                          onClick={() => openInjury(encounter.session_id, inj.groupRegion)}
+                          title={`${regionLabel(inj.region)} · ${inj.triage} · ${inj.frames.length} frame${inj.frames.length === 1 ? '' : 's'} · scanned ${formatDate(encounter.created_at)}`}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 8, whiteSpace: 'nowrap',
+                            cursor: 'pointer', transition: 'all 0.2s', fontSize: 11,
+                            border: active ? '1px solid rgba(34,211,238,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                            background: active ? 'rgba(34,211,238,0.08)' : 'transparent',
+                            color: active ? 'var(--cyan)' : 'var(--text2)',
+                          }}
+                        >
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: triageColor[inj.triage] ?? 'var(--text3)', flexShrink: 0 }} />
+                          <span style={{ fontWeight: 600 }}>{regionLabel(inj.region)}</span>
+                          {inj.review && <span style={{ color: '#a78bfa', fontSize: 10 }} title="Clinician-reviewed">✓</span>}
+                          {inj.pwat != null && <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{inj.pwat.toFixed(1)}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -310,7 +358,17 @@ export default function PatientModal() {
                         </div>
                         <div className="patient-field">
                           <div className="patient-field-label">Body Region</div>
-                          <div className="patient-field-value" style={{ fontSize: 13 }}>{s.body_region || '—'}</div>
+                          <div className="patient-field-value" style={{ fontSize: 13 }}>{injuryRegion || '—'}</div>
+                          {isAnalysing(activeInjury?.region) && (
+                            <div style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'var(--mono)', marginTop: 2 }} title="Triage, PWAT and images are final; the AI body-region read is still running and appears here automatically">
+                              AI read in progress
+                            </div>
+                          )}
+                          {activeInjury?.sideUnknown && (
+                            <div style={{ fontSize: 10, color: 'var(--amber)', fontFamily: 'var(--mono)', marginTop: 2 }} title="The side could not be seen in the scan — confirm before treatment">
+                              Side not confirmed
+                            </div>
+                          )}
                         </div>
                         <div className="patient-field">
                           <div className="patient-field-label">Scan Location (GPS)</div>
@@ -333,9 +391,17 @@ export default function PatientModal() {
                       )}
                     </div>
 
+                    {activeInjury && (
+                      <ClinicianReview
+                        key={`${activeInjury.key}::${activeInjury.review?.review_id ?? 'none'}`}
+                        injury={activeInjury}
+                        canReview={canReview}
+                      />
+                    )}
+
                     {frames.length > 1 && (
                       <div style={{ marginBottom: 16, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8 }}>
-                        <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>Captured Frames — {s.body_region || 'this wound'}</div>
+                        <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>Captured Frames — {regionLabel(injuryRegion)}</div>
                         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
                           {frames.map((f: any, i: number) => (
                             <button
@@ -356,7 +422,7 @@ export default function PatientModal() {
                             >
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                                 {f.triage && <span style={{ width: 6, height: 6, borderRadius: '50%', background: triageColor[f.triage] ?? 'var(--text3)' }} />}
-                                {frameLabel(s.body_region, i)}
+                                {frameLabel(injuryRegion, i)}
                               </span>
                             </button>
                           ))}
@@ -396,7 +462,7 @@ export default function PatientModal() {
                     </div>
 
                     <div style={{ marginBottom: 14, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8 }}>
-                      <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>Source Image ({frameLabel(s.body_region, activeFrameIndex)})</div>
+                      <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>Source Image ({frameLabel(injuryRegion, activeFrameIndex)})</div>
                       <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text2)', wordBreak: 'break-all' }}>{displaySourceImage}</div>
                     </div>
 
@@ -519,11 +585,11 @@ export default function PatientModal() {
               <div style={{ fontSize: 14, color: '#9ca3af' }}>SESSION ID: {s.session_id}</div>
               <div style={{ fontSize: 14, color: '#9ca3af', marginTop: 5 }}>DATE: {formatDate(s.created_at)}</div>
               <div style={{ fontSize: 14, color: '#9ca3af', marginTop: 5 }}>PATIENT: {s.patient_name || '—'}{s.patient_id ? ` (${s.patient_id})` : ''}</div>
-              <div style={{ fontSize: 14, color: '#9ca3af', marginTop: 5 }}>BODY REGION: {s.body_region || '—'}</div>
+              <div style={{ fontSize: 14, color: '#9ca3af', marginTop: 5 }}>INJURIES: {encounterRegions || '—'}</div>
               <div style={{ fontSize: 14, color: '#9ca3af', marginTop: 5 }}>SCAN LOCATION: {gpsText || '—'}</div>
             </div>
 
-            {frames.map((frame: any, idx: number) => {
+            {allFrames.map((frame: any, idx: number) => {
               const frameGcs = frame.gcs_outputs || {};
               const framePwat = frame.pwat_score ?? '—';
               const frameDepth = frame.depth_severity ?? '—';
@@ -532,7 +598,7 @@ export default function PatientModal() {
               return (
                 <div key={idx} style={{ marginBottom: 40, background: '#0f172a', padding: 20, borderRadius: 10, border: '1px solid #1e293b', pageBreakInside: 'avoid' }}>
                   <h2 style={{ fontSize: 18, borderBottom: '1px solid #334155', paddingBottom: 10, color: '#38bdf8' }}>
-                    {frameLabel(s.body_region, idx).toUpperCase()}
+                    {labelOf(idx).toUpperCase()}
                   </h2>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 15, marginTop: 15 }}>
                     <div style={{ background: '#020617', padding: 15, borderRadius: 8 }}>

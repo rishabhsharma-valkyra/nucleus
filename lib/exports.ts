@@ -4,7 +4,7 @@
 import { jsPDF } from 'jspdf';
 import { Session } from '@/types';
 import { formatDate } from '@/lib/utils';
-import { frameLabel } from '@/lib/patients';
+import { frameLabelsOf, frameRegion, regionsText } from '@/lib/patients';
 
 // Patient names / regions are free text — quote so commas can't shift columns
 const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -12,20 +12,21 @@ const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 const framesOf = (s: any) => (s.frames && s.frames.length > 0 ? s.frames : [s.wound_metrics || {}]);
 
 export function exportIncidentsCSV(sessions: Session[], filenamePrefix = 'Valkyra_Export') {
-  const headers = ['Patient ID', 'Patient Name', 'Incident (Session ID)', 'Date', 'Body Region', 'Triage',
+  const headers = ['Patient ID', 'Patient Name', 'Scan (Session ID)', 'Date', 'Body Region', 'Scan Triage',
                    'Frame', 'PWAT Score', 'Frame Triage', 'Depth Severity', 'Wound Area %', 'Latitude', 'Longitude'];
   const rows: string[] = [];
 
   sessions.forEach((s: any) => {
+    const labelOf = frameLabelsOf(s);
     framesOf(s).forEach((frame: any, fIdx: number) => {
       rows.push([
         csvCell(s.patient_id),
         csvCell(s.patient_name),
         s.session_id,
         formatDate(s.created_at).replace(/,/g, ''),
-        csvCell(s.body_region),
+        csvCell(frameRegion(s, fIdx)),
         s.triage_category || 'Unknown',
-        csvCell(frameLabel(s.body_region, fIdx)),
+        csvCell(labelOf(fIdx)),
         frame.pwat_score ?? s.pwat_score ?? 'N/A',
         frame.triage ?? '',
         frame.depth_severity ?? 'N/A',
@@ -72,7 +73,7 @@ export function exportIncidentsPDF(sessions: Session[], title = 'Valkyra Nucleus
     doc.setFontSize(11);
     doc.setTextColor(40, 40, 40);
     doc.setFont('helvetica', 'bold');
-    doc.text(`${idx + 1}. ${s.patient_name || s.patient_id || 'Unidentified patient'} — ${s.body_region || 'Region not specified'}`, 14, yOffset);
+    doc.text(`${idx + 1}. ${s.patient_name || s.patient_id || 'Unidentified patient'} — ${regionsText(s) || 'Region not recorded'}`, 14, yOffset);
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
@@ -98,7 +99,7 @@ export function exportIncidentsPDF(sessions: Session[], title = 'Valkyra Nucleus
       doc.setFontSize(9);
       doc.setTextColor(80, 80, 80);
       doc.setFont('helvetica', 'bold');
-      doc.text(`${frameLabel(s.body_region, fIdx)}:`, 20, yOffset);
+      doc.text(`${frameLabelsOf(s)(fIdx)}:`, 20, yOffset);
 
       doc.setFont('helvetica', 'normal');
       doc.text(`PWAT: ${pwat}   |   Triage: ${frame.triage ?? '—'}   |   Depth: ${depth}   |   Area: ${area}`, 70, yOffset);

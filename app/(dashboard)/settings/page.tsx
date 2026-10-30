@@ -177,7 +177,7 @@ export default function SettingsPage() {
       <Section title="System Info" i={4}>
         {[
           ['Backend',   'GCP Cloud Run'],
-          ['Dataset',   'wound_ai.sessions'],
+          ['Dataset',   'wound_ai.scans + frame_analyses'],
           ['Vision Model',  'Gemini Vision v3.1'],
           ['App Build', 'Valkyra Nucleus 1.0'],
         ].map(([k, v]) => (

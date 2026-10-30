@@ -3,9 +3,9 @@
 import { useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { jsPDF } from 'jspdf';
-import { Session, TriageCategory } from '@/types';
+import { TriageCategory } from '@/types';
 import { formatDate, parseTimestamp } from '@/lib/utils';
-import { PatientRecord, hasGps, gpsText, mapsUrl } from '@/lib/patients';
+import { PatientRecord, Injury, injuriesOf, regionLabel, hasGps, gpsText, mapsUrl, TRIAGE_RANK, isAnalysing } from '@/lib/patients';
 
 // Hospital pre-arrival handoff — per PATIENT, not per injury: the hospital
 // receives a person, so it needs who is coming, overall priority, every
@@ -15,7 +15,6 @@ import { PatientRecord, hasGps, gpsText, mapsUrl } from '@/lib/patients';
 // yet (no receiving endpoint exists), so "Send" stays disabled rather than
 // pretending to transmit; Copy / PDF hand the same summary over manually.
 
-const TRIAGE_RANK: Record<string, number> = { Red: 4, Orange: 3, Yellow: 2, Green: 1, Unclassified: 0 };
 const CURRENT_WINDOW_HOURS = 24;
 
 // Pull the "IMMEDIATE_STEPS" section out of the Gemini report text, if any.
@@ -30,7 +29,7 @@ function firstAidSteps(text: string | null | undefined): string[] {
     .slice(0, 5);
 }
 
-function buildSummary(record: PatientRecord, injuries: Session[], priority: TriageCategory, preparedBy: string): string {
+function buildSummary(record: PatientRecord, injuries: Injury[], priority: TriageCategory, preparedBy: string): string {
   const name = record.patient_name || record.patient_id;
   const loc = record.latest_location;
   const lines = [
@@ -40,14 +39,15 @@ function buildSummary(record: PatientRecord, injuries: Session[], priority: Tria
     `Patient: ${name}  (ID ${record.patient_id})`,
     `Priority: ${priority}`,
     `Injuries (${injuries.length}):`,
-    ...injuries.map((s) =>
-      `  - ${s.body_region || 'Region not specified'} — ${s.triage_category}, PWAT ${s.pwat_score != null ? Number(s.pwat_score).toFixed(1) : '—'}, ${s.wound_metrics?.depth_severity ?? 'depth n/a'}, scanned ${formatDate(s.created_at)}`
+    ...injuries.map((i) =>
+      `  - ${regionLabel(i.region)}${i.sideUnknown ? ' [side not confirmed]' : ''}${i.review ? ` [clinician-${i.review.verdict === 'corrected' ? 'corrected' : 'confirmed'}]` : ''} — ${i.triage}, PWAT ${i.pwat != null ? i.pwat.toFixed(1) : '—'}, ${i.worst?.depth_severity ?? i.session.wound_metrics?.depth_severity ?? 'depth n/a'}, scanned ${formatDate(i.session.created_at)}`
     ),
     '',
     `Last known location: ${hasGps(loc) ? `${gpsText(loc)}${loc.captured_at ? ` (fix ${formatDate(loc.captured_at)})` : ''} — ${mapsUrl(loc)}` : 'not recorded'}`,
     'Vitals: not captured',
   ];
-  const steps = injuries.flatMap((s) => firstAidSteps(s.gemini_analysis).map((st) => `  - [${s.body_region || 'wound'}] ${st}`));
+  const steps = injuries.flatMap((i) =>
+    firstAidSteps(i.worst?.gemini_text ?? i.session.gemini_analysis).map((st) => `  - [${i.region || 'wound'}] ${st}`));
   if (steps.length) lines.push('', 'First aid guided on scene (AI-suggested):', ...steps);
   return lines.join('\n');
 }
@@ -55,22 +55,41 @@ function buildSummary(record: PatientRecord, injuries: Session[], priority: Tria
 export default function HospitalHandoff({ record }: { record: PatientRecord }) {
   const { data: session } = useSession();
 
-  // Default selection: injuries from the last 24h; if none, the latest one.
+  // Every injury across the patient's scans, newest scan first
+  const allInjuries = useMemo(() => record.incidents.flatMap(injuriesOf), [record]);
+
+  // Default selection: injuries from scans in the last 24h (or the latest
+  // scan). A region rescanned later is reported once, at its LATEST reading -
+  // a reassessed wound must not appear twice in the handoff. Injuries with no
+  // recorded region are always kept.
   const defaultIds = useMemo(() => {
     const now = Date.now();
     const recent = record.incidents.filter((s) => {
       const t = parseTimestamp(s.created_at)?.getTime();
       return t != null && (now - t) / 3_600_000 <= CURRENT_WINDOW_HOURS;
     });
-    return new Set((recent.length ? recent : record.incidents.slice(0, 1)).map((s) => s.session_id));
-  }, [record]);
+    const ids = new Set((recent.length ? recent : record.incidents.slice(0, 1)).map((s) => s.session_id));
+    const seenRegions = new Set<string>();
+    const keys = new Set<string>();
+    // allInjuries is newest scan first
+    allInjuries.forEach((i) => {
+      if (!ids.has(i.session.session_id)) return;
+      if (i.region && i.region !== 'Unspecified' && !isAnalysing(i.region)) {
+        if (seenRegions.has(i.region)) return;
+        seenRegions.add(i.region);
+      }
+      keys.add(i.key);
+    });
+    return keys;
+  }, [record, allInjuries]);
 
   const [selected, setSelected] = useState<Set<string>>(defaultIds);
   const [copied, setCopied] = useState(false);
 
-  const injuries = record.incidents.filter((s) => selected.has(s.session_id));
+  const injuries = allInjuries.filter((i) => selected.has(i.key));
+  // Patient priority = worst selected injury
   const priority = injuries.reduce<TriageCategory>(
-    (w, s) => ((TRIAGE_RANK[s.triage_category] ?? 0) > (TRIAGE_RANK[w] ?? 0) ? s.triage_category : w),
+    (w, i) => ((TRIAGE_RANK[i.triage] ?? 0) > (TRIAGE_RANK[w] ?? 0) ? i.triage : w),
     'Unclassified'
   );
   const summary = buildSummary(record, injuries, priority, session?.user?.email ?? '');
@@ -134,17 +153,18 @@ export default function HospitalHandoff({ record }: { record: PatientRecord }) {
         <div>
           <div style={{ ...label, marginBottom: 8 }}>Injuries to include</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {record.incidents.map((s) => (
-              <label key={s.session_id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, cursor: 'pointer', padding: '4px 0' }}>
-                <input type="checkbox" className="accent-cyan-500" checked={selected.has(s.session_id)} onChange={() => toggle(s.session_id)} />
-                <span className={`triage-badge triage-${s.triage_category}`}>{s.triage_category}</span>
-                <span style={{ color: 'var(--text)', fontWeight: 600 }}>{s.body_region || 'Region not specified'}</span>
-                <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{formatDate(s.created_at)}</span>
+            {allInjuries.map((i) => (
+              <label key={i.key} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, cursor: 'pointer', padding: '4px 0' }}>
+                <input type="checkbox" className="accent-cyan-500" checked={selected.has(i.key)} onChange={() => toggle(i.key)} />
+                <span className={`triage-badge triage-${i.triage}`}>{i.triage}</span>
+                <span style={{ color: 'var(--text)', fontWeight: 600 }}>{regionLabel(i.region)}</span>
+                {i.sideUnknown && <span style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--amber)' }}>SIDE?</span>}
+                <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{formatDate(i.session.created_at)}</span>
               </label>
             ))}
           </div>
           <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', marginTop: 8 }}>
-            Pre-selected: injuries from the last {CURRENT_WINDOW_HOURS}h (or the latest one).
+            Pre-selected: injuries from scans in the last {CURRENT_WINDOW_HOURS}h (or the latest scan); a rescanned region uses its latest reading.
           </div>
         </div>
 

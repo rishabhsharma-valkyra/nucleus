@@ -18,6 +18,9 @@ export const PERMISSIONS = {
   ANALYTICS_VIEW: 'analytics:view',
   // Responders roster page — admin only, doctors don't need this view.
   RESPONDERS_VIEW: 'responders:view',
+  // Confirm/correct the AI read of an injury (clinician review) — doctors
+  // and admins. Reviews are the ground truth for retraining the models.
+  CLINICAL_REVIEW: 'clinical:review',
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -26,7 +29,7 @@ const ALL_PERMISSIONS = Object.values(PERMISSIONS);
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: ALL_PERMISSIONS,
-  doctor: [PERMISSIONS.INCIDENTS_CREATE, PERMISSIONS.INCIDENTS_RESOLVE, PERMISSIONS.OPERATIONS_VIEW],
+  doctor: [PERMISSIONS.INCIDENTS_CREATE, PERMISSIONS.INCIDENTS_RESOLVE, PERMISSIONS.OPERATIONS_VIEW, PERMISSIONS.CLINICAL_REVIEW],
   patient: [],
 };
 

@@ -19,10 +19,13 @@ export async function GET(request: NextRequest) {
   const offset = searchParams.get('offset') ?? '0';
   // Optional: narrow to one patient's wound sessions
   const patientId = searchParams.get('patient_id');
+  // Optional: only scans delivered or AI-updated after this time (incremental poll)
+  const since = searchParams.get('since');
 
   const { status, data } = await forwardToBackend(
     `/patients?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}` +
-    (patientId ? `&patient_id=${encodeURIComponent(patientId)}` : '')
+    (patientId ? `&patient_id=${encodeURIComponent(patientId)}` : '') +
+    (since ? `&since=${encodeURIComponent(since)}` : '')
   );
   return Response.json(data, { status });
 }

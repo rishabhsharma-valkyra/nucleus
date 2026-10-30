@@ -533,3 +533,10 @@ body {
 .leaflet-control-attribution { background: rgba(2,6,23,0.7) !important; color: #64748b !important; }
 .leaflet-control-attribution a { color: #94a3b8 !important; }
 .leaflet-bar a { background: rgba(2,6,23,0.9); color: #e2e8f0; border-color: rgba(255,255,255,0.12); }
+
+/* Native <select> menus ignore the dark theme unless told to: without this
+   the open list renders light text on a white background (unreadable). */
+select, .form-input, .form-select { color-scheme: dark; }
+select option, select optgroup { background-color: #0f172a; color: #e2e8f0; }
+select optgroup { color: #94a3b8; font-style: normal; font-weight: 600; }
+select option:checked { background-color: #1e3a5f; color: #ffffff; }

@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { NextRequest } from 'next/server';
 import { authorizeGcsPath } from '@/lib/gcsAccess';
+import { backendHeaders } from '@/lib/backend';
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
   try {
     const upstream = await fetch(
       `${process.env.NEXT_PUBLIC_API_BASE}/gcs/text?path=${encodeURIComponent(path)}`,
-      { headers: { 'x-internal-key': process.env.INTERNAL_API_KEY ?? '' } }
+      { headers: await backendHeaders() }
     );
     // A failed fetch previously came back as a 200 text/plain body, so the
     // Gemini report pane rendered the upstream error JSON as if it were the

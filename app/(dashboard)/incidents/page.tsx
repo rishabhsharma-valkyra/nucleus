@@ -4,9 +4,14 @@ import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { useAllSessions } from '@/hooks';
-import { pwatColor, formatDate, parseTimestamp } from '@/lib/utils';
+import { pwatColor, formatDate, parseTimestamp, timeAgo } from '@/lib/utils';
 import { sessionStatus } from '@/lib/sessionsAsIncidents';
-import { groupSessionsByPatient, hasGps, gpsText, patientHref, UNIDENTIFIED_ID, PatientRecord } from '@/lib/patients';
+import {
+  groupSessionsByPatient, hasGps, gpsText, patientHref, regionLabel,
+  UNIDENTIFIED_ID, PatientRecord, MULTIPLE_INJURIES, TRIAGE_RANK, needsReview,
+} from '@/lib/patients';
+
+const TRIAGE_DOT: Record<string, string> = { Red: 'var(--red)', Orange: 'var(--amber)', Yellow: '#facc15', Green: 'var(--green)' };
 import { exportIncidentsCSV, exportIncidentsPDF } from '@/lib/exports';
 import PatientPhoto from '@/components/patients/PatientPhoto';
 
@@ -39,6 +44,8 @@ export default function PatientIncidentsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [dateRange, setDateRange] = useState<'7D' | '30D' | '90D' | 'ALL'>('ALL');
   const [triageFilter, setTriageFilter] = useState<string>('All');
+  // Priority: most urgent patient on top (worst triage, then most recent)
+  const [sortBy, setSortBy] = useState<'priority' | 'recent'>('priority');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { patients, unidentifiedCount } = useMemo(
@@ -50,7 +57,7 @@ export default function PatientIncidentsPage() {
   const filteredPatients = useMemo(() => {
     const q = searchQuery.toLowerCase();
     const now = Date.now();
-    return patients.filter((p) => {
+    const list = patients.filter((p) => {
       const matchesSearch = !q || p.patient_id.toLowerCase().includes(q) || (p.patient_name ?? '').toLowerCase().includes(q);
       const matchesTriage = triageFilter === 'All' || p.worst_triage === triageFilter;
       const daysDiff = (now - (parseTimestamp(p.last_seen)?.getTime() ?? NaN)) / (1000 * 3600 * 24);
@@ -60,7 +67,19 @@ export default function PatientIncidentsPage() {
       if (dateRange === '90D') matchesDate = daysDiff <= 90;
       return matchesSearch && matchesTriage && matchesDate;
     });
-  }, [patients, searchQuery, triageFilter, dateRange]);
+    // groupSessionsByPatient already returns most recent first
+    if (sortBy === 'priority') {
+      list.sort((a, b) => (TRIAGE_RANK[b.worst_triage] ?? 0) - (TRIAGE_RANK[a.worst_triage] ?? 0));
+    }
+    return list;
+  }, [patients, searchQuery, triageFilter, dateRange, sortBy]);
+
+  // Patients per worst triage, shown on the filter buttons
+  const triageCounts = useMemo(() => {
+    const c: Record<string, number> = { All: patients.length };
+    patients.forEach((p) => { c[p.worst_triage] = (c[p.worst_triage] ?? 0) + 1; });
+    return c;
+  }, [patients]);
 
   const activeCount = patients.filter((p) => sessionStatus(p.last_seen) === 'Active').length;
   const showUnidentified = unidentifiedCount > 0 && !searchQuery && triageFilter === 'All';
@@ -144,6 +163,22 @@ export default function PatientIncidentsPage() {
             >
               {t !== 'All' && <div className={`w-1.5 h-1.5 rounded-full ${t === 'Red' ? 'bg-red' : t === 'Orange' ? 'bg-amber' : t === 'Yellow' ? 'bg-yellow-400' : 'bg-green'}`} />}
               {t}
+              <span style={{ fontFamily: 'var(--mono)', color: 'var(--text3)', fontSize: 10 }}>{triageCounts[t] ?? 0}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Sort */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingLeft: 16, borderLeft: '1px solid var(--border)' }}>
+          {([['priority', 'Priority'], ['recent', 'Most recent']] as const).map(([k, l]) => (
+            <button
+              key={k}
+              className="btn"
+              style={{ fontSize: 11, padding: '6px 14px', ...(sortBy === k ? activeBtn : {}) }}
+              onClick={() => setSortBy(k)}
+              title={k === 'priority' ? 'Worst triage first, then most recent' : 'Most recently scanned first'}
+            >
+              {l}
             </button>
           ))}
         </div>
@@ -215,10 +250,34 @@ export default function PatientIncidentsPage() {
                           <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{name}</span>
                           <span className={`triage-badge triage-${p.worst_triage} uppercase`}>{p.worst_triage}</span>
                           {isActive && <span style={{ fontSize: 9, fontFamily: 'var(--mono)', letterSpacing: 1.5, color: 'var(--cyan)' }}>● ACTIVE</span>}
+                          {p.current_injuries.length >= MULTIPLE_INJURIES && (
+                            <span style={{ fontSize: 9, fontFamily: 'var(--mono)', letterSpacing: 1.5, color: 'var(--amber)' }} title="Several wounds can add up to a serious patient — review overall priority">MULTIPLE INJURIES</span>
+                          )}
+                          {needsReview(p.current_injuries).length > 0 && (
+                            <span style={{ fontSize: 9, fontFamily: 'var(--mono)', letterSpacing: 1.5, color: '#a78bfa' }} title="Injuries in the latest scan no clinician has confirmed yet">
+                              {needsReview(p.current_injuries).length} TO REVIEW
+                            </span>
+                          )}
+                        </div>
+                        {/* Current injuries at a glance, worst first */}
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 5 }}>
+                          {p.current_injuries.slice(0, 4).map((inj) => (
+                            <span
+                              key={inj.key}
+                              title={`${regionLabel(inj.region)} · ${inj.triage}${inj.pwat != null ? ` · PWAT ${inj.pwat.toFixed(1)}` : ''}`}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text2)', padding: '2px 8px', borderRadius: 10, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}
+                            >
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: TRIAGE_DOT[inj.triage] ?? 'var(--text3)' }} />
+                              {regionLabel(inj.region)}
+                            </span>
+                          ))}
+                          {p.current_injuries.length > 4 && (
+                            <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', padding: '2px 4px' }}>+{p.current_injuries.length - 4} more</span>
+                          )}
                         </div>
                         <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
-                          ID {p.patient_id} · {p.incidents.length} incident{p.incidents.length === 1 ? '' : 's'} · last seen {formatDate(p.last_seen)}
-                          {p.latest_body_region && <> · {p.latest_body_region}</>}
+                          ID {p.patient_id}{p.incidents.length > 1 ? ` · ${p.incidents.length} scans` : ''} · last scanned{' '}
+                          <span title={formatDate(p.last_seen)} style={{ color: isActive ? 'var(--text2)' : undefined }}>{timeAgo(p.last_seen)}</span>
                         </div>
                       </div>
                     </div>
@@ -255,7 +314,7 @@ export default function PatientIncidentsPage() {
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', marginBottom: 4 }}>Unidentified scans</div>
                       <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
-                        {unidentifiedCount} scan{unidentifiedCount === 1 ? '' : 's'} recorded before face login was linked
+                        {unidentifiedCount} scan{unidentifiedCount === 1 ? '' : 's'} with no patient attached (face not identified, or recorded before face login)
                       </div>
                     </div>
                   </div>
