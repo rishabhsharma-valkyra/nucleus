@@ -64,6 +64,12 @@ export interface Session {
   closed_by?: string | null;
   // Latest clinician review per injury (keyed by the injury's AI region)
   reviews?: ClinicianReview[];
+  // Who sent it, stamped by the cloud from the edge's credentials:
+  // device_verified = it used its own device key; responder = on shift then
+  device_id?: string | null;
+  device_verified?: boolean | null;
+  org_id?: string | null;
+  responder?: { email: string; name: string | null } | null;
 }
 
 export type Severity = 'Minor' | 'Moderate' | 'Severe' | 'Critical';
