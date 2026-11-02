@@ -1,0 +1,20 @@
+# Weekly dependency update PRs (security fixes arrive as soon as published).
+# They go through the same review + CI rules as any other PR.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Major upgrades (e.g. Next 15) are planned work, not automatic PRs
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
