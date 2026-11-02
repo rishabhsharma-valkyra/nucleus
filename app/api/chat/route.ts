@@ -6,6 +6,7 @@ import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS, ROLE_LABELS } from '@/lib/rbac';
 import { getEffectiveRole } from '@/lib/serverRole';
 import { createAssistantTools } from '@/lib/assistant/tools';
+import { forwardToBackend, Actor } from '@/lib/backend';
 import { NAV_PAGES } from '@/lib/assistant/types';
 
 export const maxDuration = 60;
@@ -52,11 +53,37 @@ function pageContext(pathname: unknown): string {
   return page ? `the ${page.label} page (${pathname})` : pathname.slice(0, 120);
 }
 
-function systemPrompt(opts: { userName: string; userRole: string; privileged: boolean; page: string }) {
+// What this user may see, as the Hospital API applies it (memberships and
+// whether organization rules are on), so the model describes counts as
+// "within your access" rather than as system-wide totals
+async function accessContext(actor: Actor): Promise<string> {
+  const { status, data } = await forwardToBackend('/me', {}, actor).catch(() => ({ status: 0, data: null }));
+  const me = status === 200 ? (data as any) : null;
+  if (!me) return 'Unknown — treat every figure as limited to what the tools return for this user.';
+  if (!me.org_access_enforced) return 'Organization access rules are off: tools return data of all organizations.';
+  const ms: { org_id: string; role: string }[] = me.memberships ?? [];
+  if (ms.some((m) => m.role === 'platform_admin')) return 'Platform admin: tools return data of every organization.';
+  if (!ms.length) return 'This user belongs to no organization, so the tools return no patient data.';
+  return `Limited to ${ms.map((m) => `${m.org_id} (${m.role})`).join(', ')}. Tools return ONLY these organizations' data — ` +
+    'never describe counts as system-wide totals; say "in your organization" instead.';
+}
+
+// Earlier turns keep only their text: every answer is grounded on fresh
+// lookups made with the user's CURRENT access, never on data saved in the
+// browser's chat history from before (or forged into it).
+function textOnly(messages: UIMessage[]): UIMessage[] {
+  const lastUser = messages.map((m) => m.role).lastIndexOf('user');
+  return messages
+    .map((m, i) => (i >= lastUser ? m : { ...m, parts: (m.parts ?? []).filter((p: any) => p.type === 'text') }))
+    .filter((m) => m.parts.length);
+}
+
+function systemPrompt(opts: { userName: string; userRole: string; privileged: boolean; page: string; access: string }) {
   return `You are Valkyra Sentinel, the assistant inside Valkyra Nucleus, a command center for emergency wound care.
 Responders scan wounds with AR headsets; each End Scan is one "scan" of one patient and can hold several injuries (grouped by body region).
 
 You are speaking to ${opts.userName} (${opts.userRole}). They are currently on ${opts.page}.
+Their data access: ${opts.access}
 Current server time (UTC): ${new Date().toISOString()}
 
 ${opts.privileged
@@ -68,6 +95,7 @@ DOMAIN (authoritative):
 - Triage: Red (immediate) > Orange (very urgent) > Yellow (urgent) > Green (minor). A scan's triage is its worst injury's.
 - Body regions use the PATIENT's own left/right. "(side unknown)" means the side was not visible — never guess it.
 - Each injury has an AI read (wound type, severity, observations, immediate steps). A clinician review, when present, overrides the AI and is authoritative — say which one you are quoting.
+- A tool answer of "doesn't have access" means the user isn't permitted to see it. Say so plainly; never suggest the data doesn't exist, and never guess it.
 - "Awaiting review" = injuries no clinician has confirmed yet. "AI pending" = frames whose AI read has not arrived yet.
 
 ANSWERING:
@@ -96,17 +124,27 @@ export async function POST(req: NextRequest) {
     // empty body -> no messages
   }
 
-  // Same gate as /api/patients: only roles that may see all-patient data
-  // get the data tools. The role comes from the session, never the body.
+  // Data tools only for roles that may view operations data — checked on
+  // BOTH the real sign-in role and the dev-switch role, so the switch can
+  // preview a lower role but never grant a higher one. Never from the body.
+  // What the tools then return is scoped further by the Hospital API to the
+  // user's organizations.
   const role = getEffectiveRole(session);
-  const privileged = hasPermission(role, PERMISSIONS.OPERATIONS_VIEW);
+  const privileged = hasPermission(role, PERMISSIONS.OPERATIONS_VIEW)
+    && hasPermission(session.user.role, PERMISSIONS.OPERATIONS_VIEW);
+  const actor: Actor = {
+    email: userEmail,
+    role: session.user.role,
+    ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+  };
 
-  const history: UIMessage[] = Array.isArray(body.messages) ? body.messages.slice(-HISTORY_MESSAGES) : [];
+  const history: UIMessage[] = Array.isArray(body.messages) ? textOnly(body.messages.slice(-HISTORY_MESSAGES)) : [];
   // The model's turn order must start with the user (drops the greeting)
   while (history.length && history[0].role !== 'user') history.shift();
   if (!history.length) return Response.json({ error: 'No message to answer' }, { status: 400 });
 
-  const tools = privileged ? createAssistantTools() : undefined;
+  const tools = privileged ? createAssistantTools(actor) : undefined;
+  const access = privileged ? await accessContext(actor) : 'None (no data tools for this role).';
   const result = streamText({
     model: gemini(CHAT_MODEL),
     system: systemPrompt({
@@ -114,6 +152,7 @@ export async function POST(req: NextRequest) {
       userRole: ROLE_LABELS[role] ?? 'Medical Officer',
       privileged,
       page: pageContext(body.pathname),
+      access,
     }),
     messages: await convertToModelMessages(history, { tools, ignoreIncompleteToolCalls: true }),
     tools,
