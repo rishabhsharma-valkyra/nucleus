@@ -22,7 +22,7 @@ export async function currentActor(): Promise<Actor | null> {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) return null;
-    const ip = headers().get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+    const ip = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() || null;
     return { email: session.user.email, role: session.user.role ?? null, ip };
   } catch {
     return null;    // outside a request (e.g. build time)

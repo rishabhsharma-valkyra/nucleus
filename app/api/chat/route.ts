@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
   // preview a lower role but never grant a higher one. Never from the body.
   // What the tools then return is scoped further by the Hospital API to the
   // user's organizations.
-  const role = getEffectiveRole(session);
+  const role = (await getEffectiveRole(session));
   const privileged = hasPermission(role, PERMISSIONS.OPERATIONS_VIEW)
     && hasPermission(session.user.role, PERMISSIONS.OPERATIONS_VIEW);
   const actor: Actor = {

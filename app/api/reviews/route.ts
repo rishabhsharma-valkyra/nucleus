@@ -11,7 +11,7 @@ import { getEffectiveRole } from '@/lib/serverRole';
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return new Response('Unauthorized', { status: 401 });
-  const role = getEffectiveRole(session);
+  const role = (await getEffectiveRole(session));
   if (!hasPermission(role, PERMISSIONS.CLINICAL_REVIEW)) {
     return new Response('Forbidden — clinical review requires a doctor or admin role', { status: 403 });
   }
