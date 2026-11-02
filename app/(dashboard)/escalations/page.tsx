@@ -1,4 +1,5 @@
 'use client';
+import DemoDataBanner from '@/components/ui/DemoDataBanner';
 import { useState } from 'react';
 import { subDays, subMonths, startOfMonth, isAfter, isEqual, parseISO } from 'date-fns';
 import { ESCALATIONS, INJURY_TYPES } from '@/config/escalations';
@@ -103,6 +104,7 @@ export default function EscalationsPage() {
 
   return (
     <>
+      <DemoDataBanner what="Escalation figures are a static demo dataset, not real clinical reviews." />
       <div style={{ background:'rgba(192,132,252,0.04)', border:'1px solid rgba(192,132,252,0.15)', borderRadius:10, padding:'10px 16px', marginBottom:20, fontSize:11, color:'var(--text3)', fontFamily:'var(--mono)' }}>
         ℹ Escalation review data is a static demo dataset — the backend has no live "would a doctor have been called" signal. Figures are illustrative, not derived from real clinical review.
       </div>

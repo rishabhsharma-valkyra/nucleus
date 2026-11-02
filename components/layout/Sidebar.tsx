@@ -1,7 +1,9 @@
 'use client';
+import { signOutAndClear } from '@/lib/clientSession';
+import { DEMO_PAGES } from '@/components/ui/DemoDataBanner';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useSummary, usePermission, useRole } from '@/hooks';
 import { ROLE_LABELS, PERMISSIONS } from '@/lib/rbac';
 import { DEV_ROLE_SWITCH_ENABLED, readDevRoleCookie, clearDevRoleCookie } from '@/lib/devRole';
@@ -135,6 +137,11 @@ export default function Sidebar() {
               >
                 {item.icon}
                 {item.label}
+                {DEMO_PAGES.has(item.href) && (
+                  <span title="Demo data — not real" style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: 1, color: '#fbbf24', border: '1px solid rgba(251,191,36,0.45)', borderRadius: 3, padding: '0 4px' }}>
+                    DEMO
+                  </span>
+                )}
                 {item.badge && (badgeCounts[item.href] ?? 0) > 0 && (
                   <span className="nav-badge">{badgeCounts[item.href]}</span>
                 )}
@@ -151,7 +158,7 @@ export default function Sidebar() {
           <div className="api-dot api-ok" />
           <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>API Connected</span>
         </div>
-        <div className="user-chip" onClick={() => signOut({ callbackUrl: '/auth/signin' })}>
+        <div className="user-chip" onClick={() => signOutAndClear('/auth/signin')}>
           <div className="avatar">{initials}</div>
           <div>
             <div className="user-name">{session?.user?.name ?? 'User'}</div>

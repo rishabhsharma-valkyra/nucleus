@@ -1,5 +1,6 @@
 'use client';
 
+import { CHAT_THREADS_PREFIX, clearOtherUsersChatHistory } from '@/lib/clientSession';
 import { useState, useRef, useEffect, useMemo, FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useChat } from '@ai-sdk/react';
@@ -232,7 +233,7 @@ interface ChatThread {
 const THREAD_RETENTION_DAYS = 10;
 const THREAD_LIMIT = 30;
 const RESUME_WINDOW_MS = 2 * 60 * 60 * 1000;
-const threadsKey = (email: string) => `valkyra-chat-threads:${email}`;
+const threadsKey = (email: string) => `${CHAT_THREADS_PREFIX}${email}`;
 
 // ── Resizable panel ─────────────────────────────────────────────────────
 // The drawer used to be locked to Tailwind's max-w-md (448px), which is
@@ -258,6 +259,7 @@ function pruneThreads(threads: ChatThread[]): ChatThread[] {
 }
 
 function loadThreads(email: string): ChatThread[] {
+  clearOtherUsersChatHistory(email);
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(threadsKey(email));

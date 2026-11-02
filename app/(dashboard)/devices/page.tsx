@@ -1,4 +1,5 @@
 'use client';
+import DemoDataBanner from '@/components/ui/DemoDataBanner';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { HoverTooltip } from '@/components/ui/MetricCard';
@@ -77,6 +78,7 @@ export default function DevicesPage() {
 
   return (
     <div className="pb-24">
+      <DemoDataBanner what="This device list is a static demo fleet, not the real device registry." />
       {/* 🛡️ TARGET 1: Fleet Health Stats */}
       <div id="spotlight-fleet-health" style={{ display:'flex', gap:12, marginBottom:20 }}>
         <HoverTooltip className="flex-1" tooltip="Percentage of the AR device fleet currently online (LIVE or ONLINE), out of all registered hardware.">

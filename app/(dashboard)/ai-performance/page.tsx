@@ -1,5 +1,6 @@
 'use client';
 
+import DemoDataBanner from '@/components/ui/DemoDataBanner';
 import { motion } from 'framer-motion';
 import { HoverTooltip } from '@/components/ui/MetricCard';
 import {
@@ -68,6 +69,7 @@ export default function AIPerformancePage() {
 
   return (
     <div className="pb-32">
+      <DemoDataBanner what="Model performance figures here are illustrative, not measured from real AI reads or outcomes." />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         

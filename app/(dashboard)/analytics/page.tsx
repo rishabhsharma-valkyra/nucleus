@@ -1,5 +1,6 @@
 'use client';
 
+import DemoDataBanner from '@/components/ui/DemoDataBanner';
 import { useState, useRef } from 'react';
 import { motion, Variants } from 'framer-motion';
 import { AnimatedNumber, HoverTooltip } from '@/components/ui/MetricCard';
@@ -129,6 +130,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="pb-10">
+      <DemoDataBanner what="Analytics charts on this page use demonstration data, not live scans." />
       
       {/* HEADER CONTROLS */}
       <div className="flex justify-end gap-4 mb-6">
