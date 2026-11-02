@@ -6,6 +6,8 @@ import { useChat } from '@ai-sdk/react';
 import { Canvas } from '@react-three/fiber';
 import { Environment } from '@react-three/drei';
 import { useSession } from 'next-auth/react';
+import { usePathname, useRouter } from 'next/navigation';
+import { ToolActivity, ToolResults, isToolPart } from '@/components/assistant/ToolParts';
 import { useRole, useSummary, useAllSessions } from '@/hooks';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import ProceduralBot from './ProceduralBot';
@@ -41,10 +43,22 @@ function buildProactiveMessages(summary: any, sessionCount: number): string[] {
 }
 
 const QUICK_PROMPTS = [
-  "Summarize today's cases",
-  "Show me the Red triage cases",
-  "What's the highest PWAT score right now?",
+  "Give me a status briefing",
+  "Show the Red triage cases from the last 24 hours",
+  "Which injuries are still awaiting clinician review?",
+  "Draft a hospital handoff for the most critical patient",
+  "Which headsets are live right now?",
 ];
+
+// Extra prompts for the page the user is on
+function contextPrompts(pathname: string | null): string[] {
+  if (pathname?.startsWith('/incidents/')) {
+    return ['Summarize this patient', 'Is this patient getting better or worse?', 'Draft a handoff for this patient'];
+  }
+  if (pathname === '/heatmaps') return ['Where are the critical cases?'];
+  if (pathname === '/incidents') return ['Which patients have more than one injury?'];
+  return [];
+}
 
 // Two regexes, not one reused with both .replace and .test — a global-flag
 // regex carries lastIndex state across .test() calls, which silently flips
@@ -59,7 +73,7 @@ function linkifySessionIds(text: string): string {
   return text.replace(UUID_RE, (match) => `[${match.slice(0, 8)}…](session:${match})`);
 }
 
-// Groq's model sometimes substitutes typographic hyphen variants (most
+// Models sometimes substitute typographic hyphen variants (most
 // often U+2011 non-breaking hyphen) for a plain ASCII hyphen inside UUIDs —
 // harmless-looking in prose, but it silently breaks the UUID regex used for
 // linkifying session IDs and detecting them for follow-up chips. Normalize
@@ -79,7 +93,7 @@ function getMessageText(m: any): string {
   return normalizeHyphens(textElements.join('\n'));
 }
 
-// groq/compound-mini streams its whole chain of thought as `reasoning` parts
+// Reasoning models stream their chain of thought as `reasoning` parts
 // BEFORE the first `text` part arrives — several hundred chunks of it. Since
 // getMessageText() only reads `text` parts, the assistant message existed for
 // that entire stretch with nothing to render, which is what put an empty
@@ -217,6 +231,7 @@ interface ChatThread {
 
 const THREAD_RETENTION_DAYS = 10;
 const THREAD_LIMIT = 30;
+const RESUME_WINDOW_MS = 2 * 60 * 60 * 1000;
 const threadsKey = (email: string) => `valkyra-chat-threads:${email}`;
 
 // ── Resizable panel ─────────────────────────────────────────────────────
@@ -282,7 +297,7 @@ function greetingMessage(firstName: string) {
   return {
     id: '1',
     role: 'assistant',
-    parts: [{ type: 'text', text: `Valkyra Sentinel online. Connected to live hospital telemetry. How can I assist, ${firstName}?` }],
+    parts: [{ type: 'text', text: `Valkyra Sentinel online, ${firstName}. I can brief you on live cases, find scans and patients, compare a patient's wounds over time, draft hospital handoffs, and open any page for you. What do you need?` }],
   };
 }
 
@@ -305,12 +320,13 @@ function stripMarkdownForSpeech(text: string): string {
 function getFollowUps(text: string): string[] {
   const t = text.toLowerCase();
   const suggestions: string[] = [];
-  if (UUID_TEST_RE.test(text)) suggestions.push('Open that session');
-  if (t.includes('red') || t.includes('critical')) suggestions.push('Show me the Red triage cases');
+  if (UUID_TEST_RE.test(text)) suggestions.push('Show the full detail of the first one');
+  if (t.includes('red') || t.includes('critical')) suggestions.push('Draft a handoff for the most critical patient');
+  if (t.includes('review')) suggestions.push('Which injuries are still awaiting review?');
   if (t.includes('pwat')) suggestions.push('What does that PWAT score mean?');
-  if (t.includes('escalat')) suggestions.push('Which responder escalates most?');
+  if (t.includes('location') || t.includes('gps')) suggestions.push('Show them on the heatmap');
   if (suggestions.length === 0) suggestions.push('What should I check next?');
-  return suggestions.slice(0, 2);
+  return suggestions.slice(0, 3);
 }
 
 // ==========================================
@@ -446,6 +462,8 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
   const sessions = sessionsData?.sessions ?? [];
   const redCount = summary?.triage_distribution?.Red?.count ?? 0;
   const setActivePatientId = useNucleusStore((s) => s.setActivePatientId);
+  const pathname = usePathname();
+  const router = useRouter();
   const voiceReplyEnabled = useNucleusStore((s) => s.voiceReplyEnabled);
   const setVoiceReplyEnabled = useNucleusStore((s) => s.setVoiceReplyEnabled);
 
@@ -606,10 +624,14 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
   // user — useChat treats `messages` as an initial value, not a reactive
   // prop, so recomputing it on every render would be wasted work (and risks
   // a subtle re-init if that assumption ever changes).
+  // Only a conversation from the last RESUME_WINDOW_MS is reopened; an older
+  // one would greet the user with a stale question they don't remember
+  // asking. Older threads stay available under History.
   const [activeThreadId, setActiveThreadId] = useState<string>(() => {
     const existing = loadThreads(userEmail);
     if (existing.length === 0) return `t-${Date.now()}`;
-    return existing.reduce((latest, t) => (t.updatedAt > latest.updatedAt ? t : latest)).id;
+    const latest = existing.reduce((a, t) => (t.updatedAt > a.updatedAt ? t : a));
+    return Date.now() - latest.updatedAt < RESUME_WINDOW_MS ? latest.id : `t-${Date.now()}`;
   });
 
   const initialMessages = useMemo(() => {
@@ -633,8 +655,23 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
     },
   };
 
-  const { messages, sendMessage, setMessages, status: chatStatus, error } = useChat(chatConfig);
+  const { messages, sendMessage, setMessages, status: chatStatus, error, stop, regenerate } = useChat(chatConfig);
   const isLoading = chatStatus === 'submitted' || chatStatus === 'streaming';
+
+  // Every turn carries the page the user is on, so "this patient" resolves.
+  // Read at send time (not captured once in chatConfig) as the user navigates.
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
+  const send = (text: string, extra: { messageId?: string } = {}) =>
+    sendMessage({ text, ...extra }, { body: { pathname: pathnameRef.current } });
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyMessage = (m: any) => {
+    navigator.clipboard?.writeText(getMessageText(m)).then(() => {
+      setCopiedId(m.id);
+      setTimeout(() => setCopiedId((id) => (id === m.id ? null : id)), 1500);
+    }).catch(() => {});
+  };
 
   // How long the model spent reasoning before its answer began, so the
   // collapsed disclosure can say "Thought for 4s". Kept in a ref because it
@@ -730,7 +767,7 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
     if (!text) return;
     setEditingMessageId(null);
     setEditDraft('');
-    sendMessage({ text, messageId });
+    send(text, { messageId });
   };
 
   useEffect(() => {
@@ -829,7 +866,7 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
       recognitionRef.current?.stop();
     }
 
-    sendMessage({ text: input });
+    send(input);
     setInput('');
     baseInputRef.current = '';
   };
@@ -1286,6 +1323,7 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                   const isLastMessage = i === messages.length - 1;
                   const hasBody = !isUser && hasMessageBody(m);
                   const reasoning = isUser ? '' : getMessageReasoning(m);
+                  const toolParts = isUser ? [] : (m.parts ?? []).filter(isToolPart);
                   // Only blink the caret next to text that actually exists.
                   const isStreamingThis = !isUser && isLastMessage && chatStatus === 'streaming' && hasBody;
                   // "Still working" = the newest reply, in flight, no answer text yet.
@@ -1367,6 +1405,9 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                             />
                           )}
 
+                          {/* What the assistant looked up, live */}
+                          <ToolActivity parts={toolParts} />
+
                           {hasBody ? (
                             <>
                               {renderMessageContent(m)}
@@ -1382,11 +1423,40 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                             renderMessageContent(m)
                           ) : isThinkingNow && !reasoning ? (
                             <TypingDots />
-                          ) : !isThinkingNow && !reasoning ? (
+                          ) : !isThinkingNow && !reasoning && !toolParts.length ? (
                             <span className="font-mono text-[11px] text-slate-500">
                               No response received.
                             </span>
                           ) : null}
+                        </div>
+                      )}
+
+                      {!isUser && (
+                        <ToolResults
+                          parts={toolParts}
+                          onOpenScan={(id) => setActivePatientId(id)}
+                          onNavigate={(href) => router.push(href)}
+                        />
+                      )}
+
+                      {!isUser && hasBody && !isStreamingThis && (
+                        <div className="flex items-center gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => copyMessage(m)}
+                            className="font-mono text-[10px] text-slate-500 hover:text-cyan-400 uppercase tracking-wider"
+                          >
+                            {copiedId === m.id ? 'Copied' : 'Copy'}
+                          </button>
+                          {isLastMessage && !isLoading && (
+                            <button
+                              type="button"
+                              onClick={() => regenerate({ body: { pathname: pathnameRef.current } })}
+                              className="font-mono text-[10px] text-slate-500 hover:text-cyan-400 uppercase tracking-wider"
+                            >
+                              Regenerate
+                            </button>
+                          )}
                         </div>
                       )}
 
@@ -1400,7 +1470,7 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                           {getFollowUps(getMessageText(m)).map((prompt) => (
                             <button
                               key={prompt}
-                              onClick={() => sendMessage({ text: prompt })}
+                              onClick={() => send(prompt)}
                               className="px-3 py-1.5 rounded-full border border-cyan-900/50 bg-cyan-950/10 text-cyan-200/90 text-[11px] font-mono hover:bg-cyan-950/30 hover:border-cyan-500/40 transition-all"
                             >
                               {prompt}
@@ -1421,10 +1491,10 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                   >
                     <span className="font-mono text-[9px] text-slate-500 tracking-widest uppercase px-1">Quick actions</span>
                     <div className="flex flex-col gap-2">
-                      {QUICK_PROMPTS.map((prompt) => (
+                      {[...contextPrompts(pathname), ...QUICK_PROMPTS].map((prompt) => (
                         <button
                           key={prompt}
-                          onClick={() => sendMessage({ text: prompt })}
+                          onClick={() => send(prompt)}
                           className="text-left px-3.5 py-2.5 rounded-lg border border-cyan-900/40 bg-cyan-950/10 text-cyan-100/90 text-[12px] font-mono hover:bg-cyan-950/30 hover:border-cyan-500/40 transition-all"
                         >
                           {prompt}
@@ -1463,8 +1533,17 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="self-start flex flex-col gap-2 max-w-[95%]">
                     <span className="font-mono text-[10px] text-red-400 tracking-wider uppercase px-1">System Alert</span>
                     <div className="p-4 rounded-xl rounded-tl-sm bg-red-950/40 border-l-2 border-red-500 text-red-400 font-mono text-xs shadow-lg">
-                      [CONNECTION SEVERED] {error.message}
+                      {error.message || 'The assistant could not answer.'}
                     </div>
+                    {!isLoading && (
+                      <button
+                        type="button"
+                        onClick={() => regenerate({ body: { pathname: pathnameRef.current } })}
+                        className="self-start font-mono text-[10px] text-cyan-300 uppercase tracking-wider bg-cyan-950/40 border border-cyan-500/40 hover:bg-cyan-950/70 transition-colors px-3 py-1.5 rounded"
+                      >
+                        Retry
+                      </button>
+                    )}
                   </motion.div>
                 )}
                 
@@ -1521,7 +1600,18 @@ function OracleChatCore({ session, role }: { session: any, role: string | null }
                       )}
                     </button>
 
-                    {!isRecording && (
+                    {!isRecording && isLoading && (
+                      <button
+                        type="button"
+                        onClick={() => stop()}
+                        title="Stop answering"
+                        className="p-2 rounded-md text-cyan-300 hover:bg-cyan-950/50 transition-all"
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                      </button>
+                    )}
+
+                    {!isRecording && !isLoading && (
                       <button 
                         type="submit" 
                         disabled={!input || !input.trim() || isLoading}
