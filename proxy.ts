@@ -1,6 +1,8 @@
+// Next.js 16 "proxy" (formerly middleware): page-level role routing.
+// Data access is still enforced in the API routes and the Hospital API.
 import { withAuth } from 'next-auth/middleware';
 import { NextResponse } from 'next/server';
-import { DEV_ROLE_COOKIE, DEV_ROLE_SWITCH_ENABLED, isValidRole } from '@/lib/devRole';
+import { DEV_ROLE_COOKIE, applyDevOverride } from '@/lib/devRole';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 
 // Command-center / operational pages — aggregate data across all patients.
@@ -28,13 +30,11 @@ const RESTRICTED_ROUTES: [string, (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
 ];
 
 export default withAuth(
-  function middleware(req) {
+  function proxy(req) {
     // TEMPORARY testing override — see lib/devRole.ts. No-ops unless
     // NEXT_PUBLIC_ENABLE_DEV_ROLE_SWITCH=true.
-    const devOverride = DEV_ROLE_SWITCH_ENABLED
-      ? req.cookies.get(DEV_ROLE_COOKIE)?.value
-      : undefined;
-    const role = isValidRole(devOverride) ? devOverride : req.nextauth.token?.role;
+    // The switch can preview an equal or lower role, never a higher one.
+    const role = applyDevOverride(req.nextauth.token?.role, req.cookies.get(DEV_ROLE_COOKIE)?.value);
     const { pathname } = req.nextUrl;
 
     if (role === 'patient' && OPERATIONS_ROUTES.some((route) => pathname.startsWith(route))) {

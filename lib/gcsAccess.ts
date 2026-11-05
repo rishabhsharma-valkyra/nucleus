@@ -97,7 +97,7 @@ export async function authorizeGcsPath(
     return { ok: false, status: 400, message: 'Invalid path' };
   }
 
-  if (hasPermission(getEffectiveRole(session), PERMISSIONS.OPERATIONS_VIEW)) {
+  if (hasPermission((await getEffectiveRole(session)), PERMISSIONS.OPERATIONS_VIEW)) {
     return { ok: true };
   }
 

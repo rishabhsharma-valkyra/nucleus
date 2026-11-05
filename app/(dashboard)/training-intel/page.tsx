@@ -1,5 +1,6 @@
 'use client';
 
+import DemoDataBanner from '@/components/ui/DemoDataBanner';
 import { useState } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { HoverTooltip } from '@/components/ui/MetricCard';
@@ -70,6 +71,7 @@ export default function TrainingIntelPage() {
 
   return (
     <div className="pb-10">
+      <DemoDataBanner what="Training figures here are demonstration data, not real training results." />
 
       {/* TABS */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>

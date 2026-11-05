@@ -12,12 +12,12 @@ import { PATIENT_ACCESS_ENABLED, PATIENT_ACCESS_DISABLED_MESSAGE } from '@/lib/p
 // OPERATIONS_VIEW, regardless of what sessionId they ask for.
 export async function GET(
   request: NextRequest,
-  { params }: { params: { sessionId: string } }
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const session = await getServerSession(authOptions);
   if (!session) return new Response('Unauthorized', { status: 401 });
 
-  const isPrivileged = hasPermission(getEffectiveRole(session), PERMISSIONS.OPERATIONS_VIEW);
+  const isPrivileged = hasPermission((await getEffectiveRole(session)), PERMISSIONS.OPERATIONS_VIEW);
   if (!isPrivileged && !PATIENT_ACCESS_ENABLED) {
     return Response.json({ error: PATIENT_ACCESS_DISABLED_MESSAGE }, { status: 403 });
   }
@@ -26,7 +26,7 @@ export async function GET(
     : `?patientEmail=${encodeURIComponent(session.user.email ?? '')}`;
 
   const { status, data } = await forwardToBackend(
-    `/patient/${encodeURIComponent(params.sessionId)}${qs}`
+    `/patient/${encodeURIComponent((await params).sessionId)}${qs}`
   );
   return Response.json(data, { status });
 }

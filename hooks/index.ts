@@ -9,18 +9,15 @@ import { fetchSummary, fetchSessions, fetchMySessions, fetchPatient, fetchPatien
 import { queryKeys } from '@/lib/queryKeys';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { Permission, hasPermission } from '@/lib/rbac';
-import { DEV_ROLE_SWITCH_ENABLED, readDevRoleCookie } from '@/lib/devRole';
+import { DEV_ROLE_SWITCH_ENABLED, readDevRoleCookie, applyDevOverride } from '@/lib/devRole';
 
 // ── RBAC ────────────────────────────────────────────────────
 export function useRole() {
   const { data: session } = useSession();
   // TEMPORARY testing override — see lib/devRole.ts. No-ops unless
   // NEXT_PUBLIC_ENABLE_DEV_ROLE_SWITCH=true.
-  if (DEV_ROLE_SWITCH_ENABLED) {
-    const override = readDevRoleCookie();
-    if (override) return override;
-  }
-  return session?.user?.role;
+  // Same rule as the server: an equal or lower role only.
+  return applyDevOverride(session?.user?.role, DEV_ROLE_SWITCH_ENABLED ? readDevRoleCookie() : undefined);
 }
 
 export function usePermission(permission: Permission) {

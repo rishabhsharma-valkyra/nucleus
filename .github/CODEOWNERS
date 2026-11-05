@@ -1,0 +1,13 @@
+# A pull request needs approval from a code owner before it can merge
+# (branch rule "Require review from Code Owners"). Add teammates' GitHub
+# usernames here so they can review each other's work; an author can't
+# approve their own PR.
+*                     @rishabhsharma-valkyra
+
+# Security-sensitive paths: auth, access, backend calls, the assistant's tools
+/lib/auth.ts          @rishabhsharma-valkyra
+/lib/backend.ts       @rishabhsharma-valkyra
+/lib/assistant/       @rishabhsharma-valkyra
+/app/api/             @rishabhsharma-valkyra
+/middleware.ts        @rishabhsharma-valkyra
+/.github/             @rishabhsharma-valkyra

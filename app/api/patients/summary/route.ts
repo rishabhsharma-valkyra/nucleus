@@ -8,7 +8,7 @@ import { getEffectiveRole } from '@/lib/serverRole';
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return new Response('Unauthorized', { status: 401 });
-  if (!hasPermission(getEffectiveRole(session), PERMISSIONS.OPERATIONS_VIEW)) {
+  if (!hasPermission((await getEffectiveRole(session)), PERMISSIONS.OPERATIONS_VIEW)) {
     return new Response('Forbidden — insufficient role', { status: 403 });
   }
 

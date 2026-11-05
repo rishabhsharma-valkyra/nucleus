@@ -5,33 +5,51 @@ import { getServerSession } from 'next-auth';
 import { headers } from 'next/headers';
 import { authOptions } from '@/lib/auth';
 
-// Headers for every Hospital API call: the key, plus who is signed in. The
-// API records the user in its audit trail of patient-data access and (once
-// organization access rules are switched on) scopes data to their
-// organizations. Only this server holds the key, so the API trusts these.
-// The role sent is the real one from the sign-in, never the dev role switch.
-export async function backendHeaders(): Promise<Record<string, string>> {
-  const out: Record<string, string> = { 'x-internal-key': process.env.INTERNAL_API_KEY ?? '' };
+// Who a backend call is made for. The Hospital API records this user in its
+// audit trail and scopes data to their organizations (once organization
+// access rules are on). `via` names the feature making the call, e.g. the
+// assistant, so the audit trail can tell its lookups from page views.
+export interface Actor {
+  email: string;
+  role?: string | null;
+  ip?: string | null;
+  via?: string;
+}
+
+// The signed-in user of the current request. The role is the real one from
+// the sign-in, never the dev role switch.
+export async function currentActor(): Promise<Actor | null> {
   try {
     const session = await getServerSession(authOptions);
-    if (session?.user?.email) {
-      out['x-user-email'] = session.user.email;
-      if (session.user.role) out['x-user-role'] = session.user.role;
-    }
-    const ip = headers().get('x-forwarded-for')?.split(',')[0]?.trim();
-    if (ip) out['x-client-ip'] = ip;
+    if (!session?.user?.email) return null;
+    const ip = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+    return { email: session.user.email, role: session.user.role ?? null, ip };
   } catch {
-    // Outside a request (e.g. build time): key only
+    return null;    // outside a request (e.g. build time)
+  }
+}
+
+// Headers for every Hospital API call: the key, plus who it's for. Only this
+// server holds the key, so the API trusts these.
+export async function backendHeaders(actor?: Actor | null): Promise<Record<string, string>> {
+  const out: Record<string, string> = { 'x-internal-key': process.env.INTERNAL_API_KEY ?? '' };
+  const who = actor === undefined ? await currentActor() : actor;
+  if (who?.email) {
+    out['x-user-email'] = who.email;
+    if (who.role) out['x-user-role'] = who.role;
+    if (who.ip) out['x-client-ip'] = who.ip;
+    if (who.via) out['x-access-via'] = who.via;
   }
   return out;
 }
 
-export async function forwardToBackend(path: string, init: RequestInit = {}) {
+// `actor` defaults to the signed-in user of the current request
+export async function forwardToBackend(path: string, init: RequestInit = {}, actor?: Actor | null) {
   const upstream = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}${path}`, {
     ...init,
     headers: {
       ...(init.headers || {}),
-      ...(await backendHeaders()),
+      ...(await backendHeaders(actor)),
     },
   });
   const data = await upstream.json().catch(() => null);

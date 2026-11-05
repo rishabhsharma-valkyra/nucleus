@@ -1,11 +1,13 @@
 // Server-only. The assistant's tools: read-only lookups through the Hospital
-// API (forwardToBackend), so the signed-in user's access rules and the audit
-// trail apply exactly as they do on every page. The model decides which to
+// API, made AS the signed-in user (the actor passed in), so they return only
+// what that user may see — the API applies the same organization scoping and
+// audit trail as on every page. The tools never widen access: there is no
+// lookup here that a page can't make for the same user. The model decides which to
 // call; outputs are compact JSON it can reason over, and the chat panel also
 // renders them (scan cards, navigation buttons) — see components/assistant.
 import { tool } from 'ai';
 import { z } from 'zod';
-import { forwardToBackend } from '@/lib/backend';
+import { forwardToBackend, Actor } from '@/lib/backend';
 import { Session, TriageCategory } from '@/types';
 import {
   injuriesOf, groupSessionsByPatient, regionTrends, hasGps, patientHref, isAnalysing, TRIAGE_RANK,
@@ -102,11 +104,33 @@ function scanDetail(s: Session) {
 
 const matches = (hay: string | null | undefined, needle: string) => !!hay && hay.toLowerCase().includes(needle.toLowerCase());
 
-export function createAssistantTools() {
+// The API refused this user (no organization membership, or out of scope)
+class NoAccess extends Error {}
+const NO_ACCESS = { error: "This account doesn't have access to that data." };
+
+// Run a tool body; a refusal becomes an answer the model can explain, not
+// a generic failure
+const guarded = <A, R>(fn: (args: A) => Promise<R>) => async (args: A) => {
+  try {
+    return await fn(args);
+  } catch (e) {
+    if (e instanceof NoAccess) return NO_ACCESS;
+    throw e;
+  }
+};
+
+export function createAssistantTools(actor: Actor) {
+  const who: Actor = { ...actor, via: 'assistant' };
+  const api = async (path: string) => {
+    const r = await forwardToBackend(path, {}, who);
+    if (r.status === 401 || r.status === 403) throw new NoAccess();
+    return r;
+  };
+
   // One load of the scan feed per chat turn, shared by every tool call in it
   let feed: Promise<Session[]> | null = null;
   const loadScans = () => {
-    feed ??= forwardToBackend(`/patients?limit=${SCAN_LIMIT}&offset=0`).then(({ status, data }) => {
+    feed ??= api(`/patients?limit=${SCAN_LIMIT}&offset=0`).then(({ status, data }) => {
       if (status !== 200) throw new Error(`Hospital API answered ${status}`);
       return ((data as any)?.sessions ?? []) as Session[];
     });
@@ -122,11 +146,11 @@ export function createAssistantTools() {
         'injuries awaiting clinician review, AI reads still pending, and how many headsets are live. Use for any "how are we doing", ' +
         '"summary", "status" or count question.',
       inputSchema: z.object({}),
-      execute: async () => {
+      execute: guarded(async () => {
         const [scans, summary, live] = await Promise.all([
           loadScans(),
-          forwardToBackend('/patients/summary').then((r) => (r.status === 200 ? (r.data as any) : null)),
-          forwardToBackend('/live-locations').then((r) => (r.status === 200 ? ((r.data as any)?.headsets ?? []) : [])),
+          api('/patients/summary').then((r) => (r.status === 200 ? (r.data as any) : null)),
+          api('/live-locations').then((r) => (r.status === 200 ? ((r.data as any)?.headsets ?? []) : [])),
         ]);
         const dayAgo = Date.now() - 24 * 3600_000;
         const byTriage: Record<string, number> = { Red: 0, Orange: 0, Yellow: 0, Green: 0, Unclassified: 0 };
@@ -155,7 +179,7 @@ export function createAssistantTools() {
           headsets_live: live.filter((h: any) => h.last_updated_unix && nowS - h.last_updated_unix < LIVE_WINDOW_S).length,
           headsets_reporting: live.length,
         };
-      },
+      }),
     }),
 
     list_scans: tool({
@@ -172,7 +196,7 @@ export function createAssistantTools() {
         sort: z.enum(['newest', 'most_severe']).optional(),
         limit: z.number().int().min(1).max(20).optional(),
       }),
-      execute: async ({ triage, since_hours, patient, body_region, awaiting_review, sort, limit }) => {
+      execute: guarded(async ({ triage, since_hours, patient, body_region, awaiting_review, sort, limit }) => {
         let list = await loadScans();
         if (since_hours) {
           const from = Date.now() - since_hours * 3600_000;
@@ -187,7 +211,7 @@ export function createAssistantTools() {
           ? (a, b) => (TRIAGE_RANK[b.triage] ?? 0) - (TRIAGE_RANK[a.triage] ?? 0) || (b.max_pwat ?? 0) - (a.max_pwat ?? 0)
           : (a, b) => (parseTimestamp(b.recorded_at)?.getTime() ?? 0) - (parseTimestamp(a.recorded_at)?.getTime() ?? 0));
         return { total_matching: cards.length, scans: cards.slice(0, limit ?? 8) };
-      },
+      }),
     }),
 
     get_scan: tool({
@@ -195,13 +219,13 @@ export function createAssistantTools() {
         'Full detail of one scan by its session ID: patient, time, GPS, responder, device, and every injury with region, triage, ' +
         'PWAT, AI wound type, severity, observations, immediate first-aid steps and any clinician review.',
       inputSchema: z.object({ session_id: z.string().min(8).max(80) }),
-      execute: async ({ session_id }) => {
+      execute: guarded(async ({ session_id }) => {
         const id = session_id.trim();
-        const { status, data } = await forwardToBackend(`/patient/${encodeURIComponent(id)}`);
+        const { status, data } = await api(`/patient/${encodeURIComponent(id)}`);
         if (status === 404) return { error: `No scan with session ID ${id}` };
         if (status !== 200) throw new Error(`Hospital API answered ${status}`);
         return { scan: scanDetail(data as Session) };
-      },
+      }),
     }),
 
     get_patient: tool({
@@ -210,7 +234,7 @@ export function createAssistantTools() {
         'and how each body region changed between scans (getting better or worse). If several patients match, returns the ' +
         'candidates to ask the user which one.',
       inputSchema: z.object({ patient: z.string().min(1).max(120).describe('Patient name or ID (partial is fine)') }),
-      execute: async ({ patient }) => {
+      execute: guarded(async ({ patient }) => {
         const { patients } = groupSessionsByPatient(await loadScans());
         const q = patient.trim().toLowerCase();
         const exact = patients.filter((p) => p.patient_id.toLowerCase() === q || (p.patient_name ?? '').toLowerCase() === q);
@@ -241,14 +265,14 @@ export function createAssistantTools() {
           },
           scans: p.incidents.slice(0, 10).map(scanCard),
         };
-      },
+      }),
     }),
 
     get_live_headsets: tool({
       description: 'AR headsets reporting GPS: which are live now (updated in the last 2 minutes), where, and which patient they are on.',
       inputSchema: z.object({}),
-      execute: async () => {
-        const { status, data } = await forwardToBackend('/live-locations');
+      execute: guarded(async () => {
+        const { status, data } = await api('/live-locations');
         if (status !== 200) throw new Error(`Hospital API answered ${status}`);
         const nowS = Date.now() / 1000;
         return {
@@ -260,7 +284,7 @@ export function createAssistantTools() {
             last_update: h.last_updated_unix ? humanAge(new Date(h.last_updated_unix * 1000).toISOString()) : 'unknown',
           })),
         };
-      },
+      }),
     }),
 
     show_in_app: tool({

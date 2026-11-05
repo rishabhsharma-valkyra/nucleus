@@ -1,0 +1,63 @@
+# Runs on every push. A PR can only merge into main when this passes
+# (required checks "ci" and "secret-scan" in the branch rules) and a code
+# owner has approved it.
+name: ci
+
+on:
+  push:            # every branch, so problems show up before a PR exists
+  pull_request:    # only needed for PRs from forks (this repo is public)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ci
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install (exact lockfile)
+        run: npm ci
+
+      - name: Production build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          # Build-time placeholders only; real values live in Vercel
+          NEXT_PUBLIC_API_BASE: https://example.invalid
+          NEXTAUTH_URL: https://example.invalid
+
+      # After the build, which generates next-env.d.ts and the route types
+      - name: Type-check
+        run: npx tsc --noEmit -p .
+
+      - name: Dependency audit (fail on critical)
+        run: npm audit --omit=dev --audit-level=critical
+
+  secrets:
+    name: secret-scan
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

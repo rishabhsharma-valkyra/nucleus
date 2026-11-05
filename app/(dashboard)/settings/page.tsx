@@ -1,5 +1,6 @@
 'use client';
-import { useSession, signOut } from 'next-auth/react';
+import { signOutAndClear } from '@/lib/clientSession';
+import { useSession } from 'next-auth/react';
 import { useNucleusStore } from '@/store/useNucleusStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
@@ -167,7 +168,7 @@ export default function SettingsPage() {
                 {ROLE_LABELS[role]}
               </span>
             )}
-            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="btn btn-danger" style={{ fontSize:11, padding:'5px 14px' }} onClick={() => signOut({ callbackUrl:'/auth/signin' })}>
+            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="btn btn-danger" style={{ fontSize:11, padding:'5px 14px' }} onClick={() => signOutAndClear('/auth/signin')}>
               Sign Out
             </motion.button>
           </div>

@@ -1,4 +1,5 @@
 'use client';
+import DemoDataBanner from '@/components/ui/DemoDataBanner';
 import { motion, Variants } from 'framer-motion';
 import { RESPONDERS } from '@/config/fleet';
 import { useNucleusStore } from '@/store/useNucleusStore';
@@ -64,6 +65,7 @@ export default function RespondersPage() {
 
   return (
     <>
+      <DemoDataBanner what="Responder roster and stats are demonstration data, not real staff or shifts." />
       {/* 🛡️ TARGET 1: The top stats row */}
       <motion.div id="spotlight-fleet-stats" variants={statStagger} initial="hidden" animate="show" style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
         {[
