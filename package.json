@@ -8,12 +8,12 @@
     "start": "next start"
   },
   "dependencies": {
-    "@ai-sdk/google": "^4.0.21",
-    "@ai-sdk/react": "^4.0.37",
+    "@ai-sdk/google": "^4.0.110",
+    "@ai-sdk/react": "^4.0.165",
     "@googlemaps/js-api-loader": "^1.16.8",
     "@react-three/drei": "10.7.9",
     "@react-three/fiber": "9.8.2",
-    "@tanstack/react-query": "^5.40.0",
+    "@tanstack/react-query": "^5.105.3",
     "ai": "^7.0.34",
     "axios": "^1.7.2",
     "clsx": "^2.1.1",
@@ -33,7 +33,7 @@
     "recharts": "^2.15.4",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.6.0",
-    "three": "^0.185.1",
+    "three": "^0.187.0",
     "zod": "^4.4.3",
     "zustand": "^4.5.2"
   },
