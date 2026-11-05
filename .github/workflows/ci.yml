@@ -1,12 +1,11 @@
-# Runs on every pull request and on main. A PR can only merge when this
-# passes (required status check "ci" in the branch rules) and a code owner
-# has approved it.
+# Runs on every push. A PR can only merge into main when this passes
+# (required checks "ci" and "secret-scan" in the branch rules) and a code
+# owner has approved it.
 name: ci
 
 on:
-  pull_request:
-  push:
-    branches: [main]
+  push:            # every branch, so problems show up before a PR exists
+  pull_request:    # only needed for PRs from forks (this repo is public)
 
 permissions:
   contents: read
@@ -18,6 +17,7 @@ concurrency:
 jobs:
   build:
     name: ci
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -50,6 +50,7 @@ jobs:
 
   secrets:
     name: secret-scan
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
