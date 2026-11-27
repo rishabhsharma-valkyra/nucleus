@@ -21,6 +21,8 @@ export const PERMISSIONS = {
   // Confirm/correct the AI read of an injury (clinician review) — doctors
   // and admins. Reviews are the ground truth for retraining the models.
   CLINICAL_REVIEW: 'clinical:review',
+  // Answer and join video calls from headsets — doctors and admins.
+  CALLS_ANSWER: 'calls:answer',
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -29,7 +31,7 @@ const ALL_PERMISSIONS = Object.values(PERMISSIONS);
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: ALL_PERMISSIONS,
-  doctor: [PERMISSIONS.INCIDENTS_CREATE, PERMISSIONS.INCIDENTS_RESOLVE, PERMISSIONS.OPERATIONS_VIEW, PERMISSIONS.CLINICAL_REVIEW],
+  doctor: [PERMISSIONS.INCIDENTS_CREATE, PERMISSIONS.INCIDENTS_RESOLVE, PERMISSIONS.OPERATIONS_VIEW, PERMISSIONS.CLINICAL_REVIEW, PERMISSIONS.CALLS_ANSWER],
   patient: [],
 };
 
