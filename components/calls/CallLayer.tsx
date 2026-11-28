@@ -190,7 +190,7 @@ function FullView({ a }: { a: ActiveCall }) {
       <div className="call-full-body">
         <section className="call-main" aria-label="Headset video">
           <p className="call-banner" role="status">
-            The headset can&apos;t see or hear you yet: you can watch and listen. Your voice reaches the responder once the headset app is updated.
+            The responder hears you through the headset. They can&apos;t see your camera yet.
           </p>
           {a.micError && <p className="call-banner call-banner-warn" role="alert">{a.micError}</p>}
           <div className="call-stage-wrap">
