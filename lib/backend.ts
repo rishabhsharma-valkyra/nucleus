@@ -14,6 +14,8 @@ export interface Actor {
   role?: string | null;
   ip?: string | null;
   via?: string;
+  // Display name, shown to other people in a video call
+  name?: string | null;
 }
 
 // The signed-in user of the current request. The role is the real one from
@@ -23,7 +25,7 @@ export async function currentActor(): Promise<Actor | null> {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) return null;
     const ip = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() || null;
-    return { email: session.user.email, role: session.user.role ?? null, ip };
+    return { email: session.user.email, role: session.user.role ?? null, ip, name: session.user.name ?? null };
   } catch {
     return null;    // outside a request (e.g. build time)
   }
@@ -39,6 +41,9 @@ export async function backendHeaders(actor?: Actor | null): Promise<Record<strin
     if (who.role) out['x-user-role'] = who.role;
     if (who.ip) out['x-client-ip'] = who.ip;
     if (who.via) out['x-access-via'] = who.via;
+    // Header values must be plain ASCII
+    const name = who.name?.normalize('NFKD').replace(/[^\x20-\x7E]/g, '').trim();
+    if (name) out['x-user-name'] = name.slice(0, 80);
   }
   return out;
 }

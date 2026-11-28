@@ -17,6 +17,7 @@ import { exportIncidentsCSV, exportIncidentsPDF } from '@/lib/exports';
 import PatientPhoto from '@/components/patients/PatientPhoto';
 import HospitalHandoff from '@/components/patients/HospitalHandoff';
 import BodyMap from '@/components/patients/BodyMap';
+import CallHistory from '@/components/calls/CallHistory';
 import { Session } from '@/types';
 
 const label: React.CSSProperties = {
@@ -320,6 +321,11 @@ export default function PatientRecordPage() {
       {/* Hospital handoff — per patient, built from the injuries above */}
       <div style={{ marginTop: 8 }}>
         <HospitalHandoff key={record.patient_id} record={record} />
+      </div>
+
+      {/* Video calls from the headset about this patient */}
+      <div style={{ marginTop: 18 }}>
+        <CallHistory patientId={record.patient_id} />
       </div>
     </div>
   );
