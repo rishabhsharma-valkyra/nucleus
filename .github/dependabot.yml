@@ -1,15 +1,19 @@
-# Weekly dependency update PRs (security fixes arrive as soon as published).
+# Monthly dependency update PRs (security fixes arrive as soon as published).
 # They go through the same review + CI rules as any other PR.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 3
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      # Several advisories at once (e.g. a batch of Next.js fixes) -> one PR
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
     ignore:
       # Major upgrades (e.g. Next 15) are planned work, not automatic PRs
       - dependency-name: "*"
